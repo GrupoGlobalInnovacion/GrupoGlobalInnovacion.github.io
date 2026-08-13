@@ -1,0 +1,777 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Global Innovación — Tablero Ejecutivo</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<style>
+  :root{
+    --bg:#0b1220; --panel:#121b2e; --panel2:#182338; --border:#243352;
+    --text:#e6ecf5; --muted:#93a2c0; --accent:#4f8cff;
+    --ok:#22c55e; --warn:#f5b942; --alert:#ef4444;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg); color:var(--text); min-height:100vh;
+  }
+  header{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:16px 24px; border-bottom:1px solid var(--border); background:var(--panel);
+    position:sticky; top:0; z-index:10;
+  }
+  header h1{font-size:18px; margin:0; font-weight:700; letter-spacing:.2px;}
+  header .sub{color:var(--muted); font-size:12px; margin-top:2px;}
+  header .right{display:flex; align-items:center; gap:12px; font-size:13px; color:var(--muted);}
+  header button{
+    background:var(--panel2); color:var(--text); border:1px solid var(--border);
+    border-radius:8px; padding:8px 14px; cursor:pointer; font-size:13px;
+  }
+  header button:hover{border-color:var(--accent);}
+  main{max-width:1200px; margin:0 auto; padding:24px;}
+  .hidden{display:none !important;}
+
+  /* login */
+  #login-screen{
+    min-height:100vh; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:18px;
+  }
+  #login-screen .card{
+    background:var(--panel); border:1px solid var(--border); border-radius:16px;
+    padding:32px; width:320px;
+  }
+  #login-screen h2{margin:0 0 4px; font-size:20px;}
+  #login-screen p.hint{color:var(--muted); font-size:13px; margin:0 0 20px;}
+  #login-screen input{
+    width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--border);
+    background:var(--bg); color:var(--text); margin-bottom:10px; font-size:14px;
+  }
+  #login-screen button{
+    width:100%; padding:11px; border-radius:8px; border:none; background:var(--accent);
+    color:white; font-weight:600; cursor:pointer; font-size:14px; margin-top:4px;
+  }
+  #login-screen button.secondary{background:transparent; border:1px solid var(--border); color:var(--text); margin-top:8px;}
+  #login-screen p.forgot-hint{color:var(--muted); font-size:11.5px; text-align:center; margin:14px 0 0; line-height:1.4;}
+  #login-error{color:var(--alert); font-size:13px; min-height:18px; margin-top:8px;}
+  #login-msg{color:var(--ok); font-size:13px; min-height:18px; margin-top:8px;}
+
+  /* concentrado */
+  .grid{display:grid; grid-template-columns:repeat(auto-fill, minmax(280px,1fr)); gap:16px; margin-top:20px;}
+  .kpis{display:grid; grid-template-columns:repeat(auto-fit, minmax(180px,1fr)); gap:14px; margin-bottom:8px;}
+  .kpi{background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:16px;}
+  .kpi .label{color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em;}
+  .kpi .value{font-size:24px; font-weight:700; margin-top:6px;}
+  .kpi .value.ok{color:var(--ok);} .kpi .value.alert{color:var(--alert);}
+
+  .card{
+    background:var(--panel); border:1px solid var(--border); border-radius:14px; padding:18px;
+    cursor:pointer; transition:border-color .15s, transform .15s;
+  }
+  .card:hover{border-color:var(--accent); transform:translateY(-2px);}
+  .card .top{display:flex; justify-content:space-between; align-items:flex-start; gap:8px;}
+  .card .nombre{font-weight:700; font-size:14.5px; line-height:1.3;}
+  .badge{
+    font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px; white-space:nowrap;
+    text-transform:uppercase; letter-spacing:.03em;
+  }
+  .badge.OK{background:rgba(34,197,94,.15); color:var(--ok); border:1px solid rgba(34,197,94,.4);}
+  .badge.PRECAUCIÓN{background:rgba(245,185,66,.15); color:var(--warn); border:1px solid rgba(245,185,66,.4);}
+  .badge.ALERTA{background:rgba(239,68,68,.15); color:var(--alert); border:1px solid rgba(239,68,68,.4);}
+
+  .bar-row{margin-top:14px;}
+  .bar-label{display:flex; justify-content:space-between; font-size:11.5px; color:var(--muted); margin-bottom:4px;}
+  .bar-track{height:7px; border-radius:99px; background:var(--panel2); overflow:hidden;}
+  .bar-fill{height:100%; border-radius:99px;}
+  .bar-fill.construido{background:var(--accent);}
+  .bar-fill.gastado{background:var(--warn);}
+
+  .metrics-mini{display:flex; gap:16px; margin-top:14px; font-size:12.5px; color:var(--muted);}
+  .data-gap{
+    margin-top:10px; font-size:11px; color:var(--warn); background:rgba(245,185,66,.1);
+    border:1px solid rgba(245,185,66,.3); border-radius:6px; padding:5px 9px; cursor:help;
+  }
+  .mes-chart{display:flex; align-items:flex-end; gap:10px; height:160px; padding-top:10px;}
+  .mes-col{display:flex; flex-direction:column; align-items:center; justify-content:flex-end; flex:1; height:100%; min-width:36px;}
+  .mes-bar{width:100%; max-width:44px; background:linear-gradient(180deg, var(--accent), #2f5fc7); border-radius:4px 4px 0 0; min-height:2px;}
+  .mes-val{font-size:10px; color:var(--muted); margin-bottom:4px; white-space:nowrap;}
+  .mes-label{font-size:10.5px; color:var(--muted); margin-top:6px; text-align:center;}
+  .data-gap-banner{
+    background:rgba(245,185,66,.1); border:1px solid rgba(245,185,66,.35); border-radius:10px;
+    padding:12px 16px; margin-bottom:16px; font-size:13px; color:var(--warn);
+  }
+  .metrics-mini b{color:var(--text); display:block; font-size:14px;}
+
+  /* detail */
+  #detail-screen .backlink{color:var(--accent); cursor:pointer; font-size:13.5px; margin-bottom:14px; display:inline-block;}
+  #detail-screen h2{margin:0 0 4px; font-size:22px;}
+  #detail-screen .sub{color:var(--muted); font-size:13px; margin-bottom:20px;}
+
+  [id$="-wrap"]{overflow-x:auto; -webkit-overflow-scrolling:touch;}
+  table{width:100%; min-width:640px; border-collapse:collapse; margin-top:10px; font-size:13px;}
+  th, td{text-align:left; padding:9px 10px; border-bottom:1px solid var(--border);}
+  th{color:var(--muted); font-weight:600; font-size:11.5px; text-transform:uppercase; letter-spacing:.03em;}
+  tr:hover td{background:rgba(255,255,255,.02);}
+  td.num{text-align:right; font-variant-numeric:tabular-nums;}
+  .estado-pill{font-size:10.5px; padding:2px 8px; border-radius:99px; font-weight:700;}
+  .estado-pill[data-estado="TERMINADO"]{background:rgba(34,197,94,.15); color:var(--ok);}
+  .estado-pill[data-estado="EN PROCESO"]{background:rgba(79,140,255,.15); color:var(--accent);}
+  .estado-pill[data-estado="SIN INICIAR"]{background:rgba(147,162,192,.15); color:var(--muted);}
+  .estado-pill[data-estado="SIN DATOS"]{background:rgba(147,162,192,.15); color:var(--muted);}
+
+  section.block{background:var(--panel); border:1px solid var(--border); border-radius:14px; padding:20px; margin-top:18px;}
+  section.block h3{margin:0 0 4px; font-size:15px;}
+  section.block .desc{color:var(--muted); font-size:12.5px; margin-bottom:6px;}
+
+  form.report{display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; margin-top:14px;}
+  form.report .field{display:flex; flex-direction:column; gap:5px;}
+  form.report label{font-size:11.5px; color:var(--muted);}
+  form.report select, form.report input{
+    padding:9px 10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--bg); color:var(--text); font-size:13.5px; min-width:160px; max-width:100%; width:100%; box-sizing:border-box;
+  }
+  form.report .field{min-width:0;}
+  form.report .field:has(#report-concepto){flex:1 1 100%;}
+  form.report button{
+    padding:10px 18px; border-radius:8px; border:none; background:var(--accent);
+    color:white; font-weight:600; cursor:pointer; font-size:13.5px;
+  }
+  form.report button:disabled{opacity:.5; cursor:default;}
+  #report-msg{font-size:12.5px; margin-top:10px; min-height:16px;}
+  #report-msg.ok{color:var(--ok);} #report-msg.err{color:var(--alert);}
+
+  .loading{color:var(--muted); font-size:13.5px; padding:30px 0; text-align:center;}
+  .empty{color:var(--muted); font-size:13px; padding:14px 0;}
+
+  @media (max-width: 640px){
+    header{padding:12px 14px; flex-wrap:wrap; gap:8px;}
+    header h1{font-size:15px;}
+    header .sub{font-size:11px;}
+    header .right{font-size:11.5px; gap:8px;}
+    header .right span{display:none;}
+    main{padding:14px;}
+    .kpis{grid-template-columns:1fr 1fr;}
+    .kpi{padding:12px;}
+    .kpi .value{font-size:18px;}
+    section.block{padding:14px;}
+    form.report .field{flex:1 1 100%;}
+    form.report select, form.report input{min-width:0;}
+  }
+
+  .tabs{display:flex; gap:6px; border-bottom:1px solid var(--border); margin-bottom:16px; flex-wrap:wrap;}
+  .tab-btn{
+    background:none; border:none; color:var(--muted); padding:9px 14px; font-size:13px; font-weight:600;
+    cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px;
+  }
+  .tab-btn:hover{color:var(--text);}
+  .tab-btn.active{color:var(--accent); border-bottom-color:var(--accent);}
+</style>
+</head>
+<body>
+
+<div id="login-screen">
+  <div class="card">
+    <h2>Tablero Ejecutivo</h2>
+    <p class="hint">Grupo Global Innovación — inicia sesión con tu correo</p>
+    <input id="login-email" type="email" placeholder="correo@empresa.com" autocomplete="username">
+    <input id="login-password" type="password" placeholder="contraseña" autocomplete="current-password">
+    <button id="btn-login">Entrar</button>
+    <button id="btn-signup" class="secondary">Crear cuenta nueva</button>
+    <div id="login-error"></div>
+    <div id="login-msg"></div>
+    <p class="forgot-hint">¿Olvidaste tu contraseña? Pídele a quien administra el tablero que te la restablezca desde Supabase.</p>
+  </div>
+</div>
+
+<div id="app" class="hidden">
+  <header>
+    <div>
+      <h1>Concentrado Ejecutivo — Grupo Global Innovación</h1>
+      <div class="sub" id="header-sub">Panel de control en tiempo real de las 14 obras</div>
+    </div>
+    <div class="right">
+      <span id="user-email"></span>
+      <button id="btn-logout">Cerrar sesión</button>
+    </div>
+  </header>
+
+  <main>
+    <div id="concentrado-screen">
+      <div id="concentrado-loading" class="loading">Cargando datos…</div>
+      <div id="kpis" class="kpis hidden"></div>
+      <div id="grid" class="grid"></div>
+    </div>
+
+    <div id="detail-screen" class="hidden">
+      <span class="backlink" id="btn-back">&larr; Volver al Concentrado Ejecutivo</span>
+      <h2 id="detail-nombre"></h2>
+      <div class="sub" id="detail-sub"></div>
+
+      <div id="detail-data-gap" class="data-gap-banner hidden"></div>
+
+      <div id="detail-kpis" class="kpis"></div>
+
+      <section class="block">
+        <h3>Avance financiero</h3>
+        <div class="bar-row">
+          <div class="bar-label"><span>% ya construido</span><span id="d-pct-construido"></span></div>
+          <div class="bar-track"><div class="bar-fill construido" id="d-bar-construido"></div></div>
+        </div>
+        <div class="bar-row">
+          <div class="bar-label"><span>% ya gastado (costo directo)</span><span id="d-pct-gastado"></span></div>
+          <div class="bar-track"><div class="bar-fill gastado" id="d-bar-gastado"></div></div>
+        </div>
+        <div class="bar-row">
+          <div class="bar-label"><span>% cobrado</span><span id="d-pct-cobrado"></span></div>
+          <div class="bar-track"><div class="bar-fill construido" id="d-bar-cobrado"></div></div>
+        </div>
+      </section>
+
+      <section class="block">
+        <h3>Gasto real pagado por mes</h3>
+        <div id="gasto-mensual-wrap"><div class="loading">Cargando…</div></div>
+      </section>
+
+      <section class="block">
+        <h3>Reportar avance de esta semana</h3>
+        <div class="desc">Selecciona el concepto y captura cuánto se construyó esta semana. Se suma automáticamente al avance acumulado del concepto.</div>
+        <form class="report" id="form-report">
+          <div class="field">
+            <label>Concepto</label>
+            <select id="report-concepto" required></select>
+          </div>
+          <div class="field">
+            <label>Cantidad construida esta semana</label>
+            <input id="report-cantidad" type="number" step="any" min="0" required placeholder="0.00">
+          </div>
+          <div class="field">
+            <label>Tu nombre</label>
+            <input id="report-nombre" type="text" required placeholder="Nombre del residente">
+          </div>
+          <div class="field">
+            <label>Observaciones (opcional)</label>
+            <input id="report-obs" type="text" placeholder="—">
+          </div>
+          <button type="submit" id="btn-report">Guardar reporte</button>
+        </form>
+        <div id="report-msg"></div>
+      </section>
+
+      <section class="block">
+        <h3>Avance por concepto</h3>
+        <div id="conceptos-wrap"></div>
+      </section>
+
+      <section class="block">
+        <div class="tabs" id="detail-tabs">
+          <button class="tab-btn active" data-tab="ganador">Presupuesto Ganador</button>
+          <button class="tab-btn" data-tab="insumos">Generadora de Insumos</button>
+          <button class="tab-btn" data-tab="odoo">Costo Directo (Odoo)</button>
+          <button class="tab-btn" data-tab="cobranza">Cobranza</button>
+        </div>
+
+        <div id="tab-ganador" class="tab-panel">
+          <div class="desc">Catálogo de conceptos con precio de venta — el techo de venta de la obra.</div>
+          <div id="ganador-wrap"></div>
+        </div>
+
+        <div id="tab-insumos" class="tab-panel hidden">
+          <div class="desc">Explosión de materiales, mano de obra, herramienta y equipo — el techo financiero de la obra.</div>
+          <div id="insumos-wrap"></div>
+        </div>
+
+        <div id="tab-odoo" class="tab-panel hidden">
+          <div class="desc">Pagos reales registrados. Mientras no esté conectado el API de Odoo, agrega aquí cada pago manualmente.</div>
+          <form class="report" id="form-odoo">
+            <div class="field"><label>Comprador</label><input id="odoo-comprador" type="text" required placeholder="Nombre"></div>
+            <div class="field"><label>Proveedor</label><input id="odoo-proveedor" type="text" placeholder="—"></div>
+            <div class="field"><label>Rubro</label><input id="odoo-rubro" type="text" placeholder="—"></div>
+            <div class="field"><label>Referencia de orden</label><input id="odoo-referencia" type="text" placeholder="—"></div>
+            <div class="field"><label>Total pagado</label><input id="odoo-total" type="number" step="any" min="0" required placeholder="0.00"></div>
+            <div class="field">
+              <label>¿Se considera en el costo?</label>
+              <select id="odoo-considerar"><option value="true" selected>Sí</option><option value="false">No</option></select>
+            </div>
+            <button type="submit" id="btn-odoo">Agregar pago</button>
+          </form>
+          <div id="odoo-msg"></div>
+          <div id="odoo-wrap"></div>
+        </div>
+
+        <div id="tab-cobranza" class="tab-panel hidden">
+          <div class="desc">Cobros registrados para esta obra (de GLOBAL - Cobranza Consolidada).</div>
+          <div id="cobranza-wrap"></div>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://olgofborkemyyztgzvnh.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_dA6vXs8BFPYHJkJ6e9OnSA_jJ41hwUP';
+
+// Algunos visores (p. ej. artifacts embebidos) bloquean localStorage. Si eso pasa,
+// usamos un storage en memoria para que el login funcione durante la sesión aunque
+// no persista al recargar la página.
+function makeAuthStorage(){
+  try {
+    const testKey = '__sb_test__';
+    window.localStorage.setItem(testKey, '1');
+    window.localStorage.removeItem(testKey);
+    return window.localStorage;
+  } catch (e) {
+    const mem = {};
+    return {
+      getItem: (k) => (k in mem ? mem[k] : null),
+      setItem: (k, v) => { mem[k] = v; },
+      removeItem: (k) => { delete mem[k]; },
+    };
+  }
+}
+
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: { storage: makeAuthStorage(), persistSession: true, autoRefreshToken: true }
+});
+
+const fmtMoney = n => (n === null || n === undefined) ? '—' : '$' + Number(n).toLocaleString('es-MX', {maximumFractionDigits:0});
+const fmtPct = n => (n === null || n === undefined) ? '—' : (Number(n)*100).toFixed(1) + '%';
+const clampPct = n => Math.max(0, Math.min(100, Number(n||0)*100));
+
+let currentObra = null;
+let panelData = [];
+
+// ---------- AUTH ----------
+function showLogin(){
+  document.getElementById('login-screen').classList.remove('hidden');
+  document.getElementById('app').classList.add('hidden');
+}
+function showApp(user){
+  document.getElementById('login-screen').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  document.getElementById('user-email').textContent = user.email;
+  loadConcentrado();
+}
+
+document.getElementById('btn-login').addEventListener('click', async () => {
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  const errEl = document.getElementById('login-error');
+  const msgEl = document.getElementById('login-msg');
+  errEl.textContent = ''; msgEl.textContent = '';
+  if (!email || !password) { errEl.textContent = 'Escribe tu correo y contraseña.'; return; }
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
+  if (error) { errEl.textContent = 'No se pudo entrar: ' + error.message; return; }
+  showApp(data.user);
+});
+
+document.getElementById('btn-signup').addEventListener('click', async () => {
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  const errEl = document.getElementById('login-error');
+  const msgEl = document.getElementById('login-msg');
+  errEl.textContent = ''; msgEl.textContent = '';
+  if (!email || !password || password.length < 6) { errEl.textContent = 'Escribe correo y una contraseña de al menos 6 caracteres.'; return; }
+  const { data, error } = await sb.auth.signUp({ email, password });
+  if (error) { errEl.textContent = 'No se pudo crear la cuenta: ' + error.message; return; }
+  if (data.session) { showApp(data.user); return; }
+  msgEl.textContent = 'Cuenta creada. Revisa tu correo para confirmar antes de entrar.';
+});
+
+document.getElementById('btn-logout').addEventListener('click', async () => {
+  await sb.auth.signOut();
+  showLogin();
+});
+
+async function init(){
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) showApp(session.user); else showLogin();
+}
+init();
+
+// ---------- CONCENTRADO EJECUTIVO ----------
+async function loadConcentrado(){
+  document.getElementById('concentrado-loading').classList.remove('hidden');
+  document.getElementById('kpis').classList.add('hidden');
+  document.getElementById('grid').innerHTML = '';
+  const { data, error } = await sb.from('v_panel_control').select('*').order('nombre');
+  document.getElementById('concentrado-loading').classList.add('hidden');
+  if (error) {
+    document.getElementById('grid').innerHTML = '<div class="empty">Error cargando datos: ' + error.message + '</div>';
+    return;
+  }
+  panelData = data;
+  renderKpis(data);
+  renderGrid(data);
+}
+
+function renderKpis(rows){
+  const totalVenta = rows.reduce((s,r) => s + Number(r.precio_venta_sin_iva||0), 0);
+  const totalUtilProy = rows.reduce((s,r) => s + Number(r.utilidad_proyectada||0), 0);
+  const totalUtilPres = rows.reduce((s,r) => s + Number(r.utilidad_presupuestada||0), 0);
+  const nAlerta = rows.filter(r => r.estatus === 'ALERTA').length;
+  const nPrecaucion = rows.filter(r => r.estatus === 'PRECAUCIÓN').length;
+
+  const kpis = document.getElementById('kpis');
+  kpis.classList.remove('hidden');
+  kpis.innerHTML = `
+    <div class="kpi"><div class="label">Obras activas</div><div class="value">${rows.length}</div></div>
+    <div class="kpi"><div class="label">Venta total (sin IVA)</div><div class="value">${fmtMoney(totalVenta)}</div></div>
+    <div class="kpi"><div class="label">Utilidad presupuestada</div><div class="value">${fmtMoney(totalUtilPres)}</div></div>
+    <div class="kpi"><div class="label">Utilidad proyectada (real)</div><div class="value ${totalUtilProy < totalUtilPres*0.5 ? 'alert':'ok'}">${fmtMoney(totalUtilProy)}</div></div>
+    <div class="kpi"><div class="label">En alerta / precaución</div><div class="value ${nAlerta>0?'alert':''}">${nAlerta} / ${nPrecaucion}</div></div>
+  `;
+}
+
+function hasDataGap(r){
+  return !(Number(r.costo_directo_presupuestado || 0) > 0);
+}
+
+function renderGrid(rows){
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+  // ALERTA primero, luego PRECAUCIÓN, luego OK
+  const order = {ALERTA:0, 'PRECAUCIÓN':1, OK:2};
+  const sorted = [...rows].sort((a,b) => (order[a.estatus]??3) - (order[b.estatus]??3));
+  for (const r of sorted){
+    const card = document.createElement('div');
+    card.className = 'card';
+    const gapNote = hasDataGap(r)
+      ? `<div class="data-gap" title="Esta obra no tiene capturada su Generadora de Insumos, así que el costo directo presupuestado y la utilidad no son confiables todavía.">⚠ falta capturar costo directo</div>`
+      : '';
+    card.innerHTML = `
+      <div class="top">
+        <div class="nombre">${r.nombre}</div>
+        <span class="badge ${r.estatus}">${r.estatus}</span>
+      </div>
+      ${gapNote}
+      <div class="bar-row">
+        <div class="bar-label"><span>Construido</span><span>${fmtPct(r.pct_ya_construido)}</span></div>
+        <div class="bar-track"><div class="bar-fill construido" style="width:${clampPct(r.pct_ya_construido)}%"></div></div>
+      </div>
+      <div class="bar-row">
+        <div class="bar-label"><span>Gastado</span><span>${fmtPct(r.pct_ya_gastado)}</span></div>
+        <div class="bar-track"><div class="bar-fill gastado" style="width:${clampPct(r.pct_ya_gastado)}%"></div></div>
+      </div>
+      <div class="metrics-mini">
+        <div><b>${fmtMoney(r.utilidad_proyectada)}</b>utilidad proyectada</div>
+        <div><b>${fmtPct(r.pct_utilidad_proyectada)}</b>% margen</div>
+      </div>
+    `;
+    card.addEventListener('click', () => openDetail(r));
+    grid.appendChild(card);
+  }
+}
+
+// ---------- DETALLE / PANEL DE CONTROL ----------
+document.getElementById('btn-back').addEventListener('click', () => {
+  document.getElementById('detail-screen').classList.add('hidden');
+  document.getElementById('concentrado-screen').classList.remove('hidden');
+  currentObra = null;
+});
+
+async function openDetail(r){
+  currentObra = r;
+  document.getElementById('concentrado-screen').classList.add('hidden');
+  document.getElementById('detail-screen').classList.remove('hidden');
+  document.getElementById('detail-nombre').textContent = r.nombre;
+  document.getElementById('detail-sub').textContent = (r.cliente || '') + (r.contrato ? ' — ' + r.contrato : '');
+
+  const gapBanner = document.getElementById('detail-data-gap');
+  if (hasDataGap(r)){
+    gapBanner.classList.remove('hidden');
+    gapBanner.textContent = '⚠ Esta obra no tiene capturada su Generadora de Insumos (explosión de materiales). El costo directo presupuestado y la utilidad de esta obra no son confiables hasta que se capture esa información.';
+  } else {
+    gapBanner.classList.add('hidden');
+  }
+
+  document.getElementById('detail-kpis').innerHTML = `
+    <div class="kpi"><div class="label">Estatus</div><div class="value"><span class="badge ${r.estatus}">${r.estatus}</span></div></div>
+    <div class="kpi"><div class="label">Costo directo presupuestado</div><div class="value">${fmtMoney(r.costo_directo_presupuestado)}</div></div>
+    <div class="kpi"><div class="label">Pagado a la fecha (Odoo)</div><div class="value">${fmtMoney(r.total_pagado_odoo)}</div></div>
+    <div class="kpi"><div class="label">Disponible vs presupuesto</div><div class="value ${r.disponible_vs_presupuesto<0?'alert':'ok'}">${fmtMoney(r.disponible_vs_presupuesto)}</div></div>
+    <div class="kpi"><div class="label">Utilidad presupuestada</div><div class="value">${fmtMoney(r.utilidad_presupuestada)}</div></div>
+    <div class="kpi"><div class="label">Utilidad proyectada</div><div class="value ${r.utilidad_proyectada < r.utilidad_presupuestada*0.5 ? 'alert':'ok'}">${fmtMoney(r.utilidad_proyectada)}</div></div>
+    <div class="kpi"><div class="label">Pendiente de cobro</div><div class="value">${fmtMoney(r.pendiente_de_cobro)}</div></div>
+  `;
+
+  document.getElementById('d-pct-construido').textContent = fmtPct(r.pct_ya_construido);
+  document.getElementById('d-bar-construido').style.width = clampPct(r.pct_ya_construido) + '%';
+  document.getElementById('d-pct-gastado').textContent = fmtPct(r.pct_ya_gastado);
+  document.getElementById('d-bar-gastado').style.width = clampPct(r.pct_ya_gastado) + '%';
+  document.getElementById('d-pct-cobrado').textContent = fmtPct(r.pct_cobrado);
+  document.getElementById('d-bar-cobrado').style.width = clampPct(r.pct_cobrado) + '%';
+
+  document.getElementById('report-msg').textContent = '';
+  document.getElementById('conceptos-wrap').innerHTML = '<div class="loading">Cargando conceptos…</div>';
+
+  const { data: conceptos, error } = await sb
+    .from('v_avance_por_concepto')
+    .select('*')
+    .eq('obra_id', r.obra_id)
+    .order('clave');
+
+  if (error){
+    document.getElementById('conceptos-wrap').innerHTML = '<div class="empty">Error: ' + error.message + '</div>';
+    return;
+  }
+  renderConceptos(conceptos);
+  fillConceptoSelect(conceptos);
+  loadGastoMensual(r.obra_id);
+
+  // reset tabs to "Presupuesto Ganador" and clear cached loads for the new obra
+  tabsLoaded = {};
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === 'ganador'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('hidden', p.id !== 'tab-ganador'));
+  document.getElementById('odoo-msg').textContent = '';
+  loadTab('ganador');
+}
+
+// ---------- TABS: Presupuesto Ganador / Generadora de Insumos / Costo Directo Odoo / Cobranza ----------
+let tabsLoaded = {};
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tab = btn.dataset.tab;
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('hidden', p.id !== 'tab-' + tab));
+    loadTab(tab);
+  });
+});
+
+async function loadTab(tab){
+  if (!currentObra || tabsLoaded[tab]) return;
+  tabsLoaded[tab] = true;
+  if (tab === 'ganador') return loadGanador();
+  if (tab === 'insumos') return loadInsumos();
+  if (tab === 'odoo') return loadOdoo();
+  if (tab === 'cobranza') return loadCobranza();
+}
+
+function tableHtml(headers, rows, rowFn, emptyMsg){
+  if (!rows.length) return `<div class="empty">${emptyMsg}</div>`;
+  let html = '<table><thead><tr>' + headers.map(h => `<th${h.num?' class="num"':''}>${h.label}</th>`).join('') + '</tr></thead><tbody>';
+  for (const row of rows) html += rowFn(row);
+  html += '</tbody></table>';
+  return html;
+}
+
+async function loadGanador(){
+  const wrap = document.getElementById('ganador-wrap');
+  wrap.innerHTML = '<div class="loading">Cargando…</div>';
+  const { data, error } = await sb.from('presupuesto_ganador').select('*').eq('obra_id', currentObra.obra_id).order('clave');
+  if (error){ wrap.innerHTML = '<div class="empty">Error: ' + error.message + '</div>'; return; }
+  wrap.innerHTML = tableHtml(
+    [{label:'Clave'},{label:'Concepto'},{label:'Unidad'},{label:'Cantidad',num:true},{label:'Precio unitario',num:true},{label:'Importe',num:true}],
+    data,
+    c => `<tr><td>${c.clave||''}</td><td>${c.concepto||''}</td><td>${c.unidad||''}</td>
+      <td class="num">${Number(c.cantidad||0).toLocaleString('es-MX',{maximumFractionDigits:2})}</td>
+      <td class="num">${fmtMoney(c.precio_unitario)}</td><td class="num">${fmtMoney(c.importe)}</td></tr>`,
+    'Sin conceptos capturados.'
+  );
+}
+
+async function loadInsumos(){
+  const wrap = document.getElementById('insumos-wrap');
+  wrap.innerHTML = '<div class="loading">Cargando…</div>';
+  const { data, error } = await sb.from('generadora_insumos').select('*').eq('obra_id', currentObra.obra_id).order('clave');
+  if (error){ wrap.innerHTML = '<div class="empty">Error: ' + error.message + '</div>'; return; }
+  const conCosto = data.filter(r => Number(r.importe||0) > 0);
+  if (!conCosto.length){
+    wrap.innerHTML = '<div class="empty">Esta obra aún no tiene su explosión de insumos capturada (la plantilla está vacía en el archivo original). El costo directo presupuestado de esta obra no será confiable hasta que se capture.</div>';
+    return;
+  }
+  wrap.innerHTML = tableHtml(
+    [{label:'Clave'},{label:'Insumo'},{label:'Tipo'},{label:'Unidad'},{label:'Cantidad',num:true},{label:'Costo unitario',num:true},{label:'Importe',num:true}],
+    data,
+    c => `<tr><td>${c.clave||''}</td><td>${c.insumo||''}</td><td>${c.tipo||''}</td><td>${c.unidad||''}</td>
+      <td class="num">${Number(c.cantidad||0).toLocaleString('es-MX',{maximumFractionDigits:2})}</td>
+      <td class="num">${fmtMoney(c.costo_unitario)}</td><td class="num">${fmtMoney(c.importe)}</td></tr>`,
+    'Sin insumos capturados.'
+  );
+}
+
+async function loadOdoo(){
+  const wrap = document.getElementById('odoo-wrap');
+  wrap.innerHTML = '<div class="loading">Cargando…</div>';
+  const { data, error } = await sb.from('costo_directo_odoo').select('*').eq('obra_id', currentObra.obra_id).order('fecha_limite_orden', {ascending:false});
+  if (error){ wrap.innerHTML = '<div class="empty">Error: ' + error.message + '</div>'; return; }
+  wrap.innerHTML = tableHtml(
+    [{label:'Fecha'},{label:'Comprador'},{label:'Proveedor'},{label:'Rubro'},{label:'Referencia'},{label:'Total pagado',num:true},{label:'¿Cuenta?'}],
+    data,
+    c => `<tr><td>${c.fecha_limite_orden||'—'}</td><td>${c.comprador||''}</td><td>${c.proveedor||''}</td><td>${c.rubro||''}</td>
+      <td>${c.referencia_orden||''}</td><td class="num">${fmtMoney(c.total_pagado)}</td><td>${c.considerar_en_costo ? 'Sí' : 'No'}</td></tr>`,
+    'Sin pagos registrados.'
+  );
+}
+
+async function loadCobranza(){
+  const wrap = document.getElementById('cobranza-wrap');
+  wrap.innerHTML = '<div class="loading">Cargando…</div>';
+  const { data, error } = await sb.from('cobranza').select('*').eq('obra_id', currentObra.obra_id).order('fecha', {ascending:false});
+  if (error){ wrap.innerHTML = '<div class="empty">Error: ' + error.message + '</div>'; return; }
+  wrap.innerHTML = tableHtml(
+    [{label:'Contrato'},{label:'Importe',num:true},{label:'Acumulado pagado',num:true},{label:'Siguiente pago',num:true},{label:'Saldo',num:true},{label:'Retenciones',num:true}],
+    data,
+    c => `<tr><td>${c.contrato||''}</td><td class="num">${fmtMoney(c.importe)}</td><td class="num">${fmtMoney(c.acumulado_pagado)}</td>
+      <td class="num">${fmtMoney(c.siguiente_pago)}</td><td class="num">${fmtMoney(c.saldo)}</td><td class="num">${fmtMoney(c.retenciones_acumuladas)}</td></tr>`,
+    'Sin registros de cobranza vinculados a esta obra.'
+  );
+}
+
+document.getElementById('form-odoo').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!currentObra) return;
+  const btn = document.getElementById('btn-odoo');
+  const msg = document.getElementById('odoo-msg');
+  const comprador = document.getElementById('odoo-comprador').value.trim();
+  const proveedor = document.getElementById('odoo-proveedor').value.trim() || null;
+  const rubro = document.getElementById('odoo-rubro').value.trim() || null;
+  const referencia = document.getElementById('odoo-referencia').value.trim() || null;
+  const total = parseFloat(document.getElementById('odoo-total').value);
+  const considerar = document.getElementById('odoo-considerar').value === 'true';
+
+  if (!comprador || isNaN(total) || total < 0){
+    msg.className = 'err'; msg.textContent = 'Completa al menos comprador y total pagado.'; return;
+  }
+  btn.disabled = true; msg.className = ''; msg.textContent = 'Guardando…';
+  const { error } = await sb.from('costo_directo_odoo').insert({
+    obra_id: currentObra.obra_id,
+    comprador, proveedor, rubro,
+    referencia_orden: referencia,
+    total_pagado: total,
+    considerar_en_costo: considerar,
+    estado: 'Manual',
+  });
+  btn.disabled = false;
+  if (error){ msg.className = 'err'; msg.textContent = 'Error al guardar: ' + error.message; return; }
+  msg.className = 'ok'; msg.textContent = 'Pago agregado.';
+  document.getElementById('form-odoo').reset();
+  document.getElementById('odoo-considerar').value = 'true';
+  tabsLoaded.odoo = false;
+  loadTab('odoo');
+
+  // refresh KPIs for the obra (total_pagado_odoo changed)
+  const { data: fresh } = await sb.from('v_panel_control').select('*').eq('obra_id', currentObra.obra_id).single();
+  if (fresh){
+    const idx = panelData.findIndex(x => x.obra_id === fresh.obra_id);
+    if (idx >= 0) panelData[idx] = fresh;
+    currentObra = fresh;
+    // update just the KPI values without a full re-render (avoids resetting tabs)
+    const kpiBox = document.getElementById('detail-kpis');
+    kpiBox.innerHTML = `
+      <div class="kpi"><div class="label">Estatus</div><div class="value"><span class="badge ${fresh.estatus}">${fresh.estatus}</span></div></div>
+      <div class="kpi"><div class="label">Costo directo presupuestado</div><div class="value">${fmtMoney(fresh.costo_directo_presupuestado)}</div></div>
+      <div class="kpi"><div class="label">Pagado a la fecha (Odoo)</div><div class="value">${fmtMoney(fresh.total_pagado_odoo)}</div></div>
+      <div class="kpi"><div class="label">Disponible vs presupuesto</div><div class="value ${fresh.disponible_vs_presupuesto<0?'alert':'ok'}">${fmtMoney(fresh.disponible_vs_presupuesto)}</div></div>
+      <div class="kpi"><div class="label">Utilidad presupuestada</div><div class="value">${fmtMoney(fresh.utilidad_presupuestada)}</div></div>
+      <div class="kpi"><div class="label">Utilidad proyectada</div><div class="value ${fresh.utilidad_proyectada < fresh.utilidad_presupuestada*0.5 ? 'alert':'ok'}">${fmtMoney(fresh.utilidad_proyectada)}</div></div>
+      <div class="kpi"><div class="label">Pendiente de cobro</div><div class="value">${fmtMoney(fresh.pendiente_de_cobro)}</div></div>
+    `;
+    document.getElementById('d-pct-gastado').textContent = fmtPct(fresh.pct_ya_gastado);
+    document.getElementById('d-bar-gastado').style.width = clampPct(fresh.pct_ya_gastado) + '%';
+  }
+});
+
+function renderConceptos(rows){
+  const wrap = document.getElementById('conceptos-wrap');
+  if (!rows.length){ wrap.innerHTML = '<div class="empty">Sin conceptos.</div>'; return; }
+  let html = `<table><thead><tr>
+    <th>Clave</th><th>Concepto</th><th class="num">Contratado</th><th class="num">Construido</th>
+    <th class="num">% avance</th><th class="num">Peso en obra</th><th>Estatus</th><th>Último reporte</th>
+  </tr></thead><tbody>`;
+  for (const c of rows){
+    html += `<tr>
+      <td>${c.clave||''}</td>
+      <td>${c.concepto||''}</td>
+      <td class="num">${Number(c.cantidad_contratada||0).toLocaleString('es-MX',{maximumFractionDigits:2})}</td>
+      <td class="num">${Number(c.cantidad_construida_a_la_fecha||0).toLocaleString('es-MX',{maximumFractionDigits:2})}</td>
+      <td class="num">${fmtPct(c.pct_construido)}</td>
+      <td class="num">${fmtPct(c.peso_en_obra)}</td>
+      <td><span class="estado-pill" data-estado="${c.estatus_concepto}">${c.estatus_concepto}</span></td>
+      <td>${c.ultima_fecha_reportada || '—'}</td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+function fillConceptoSelect(rows){
+  const sel = document.getElementById('report-concepto');
+  sel.innerHTML = rows.map(c => `<option value="${c.concepto_id}" data-clave="${c.clave||''}">${c.clave||''} — ${c.concepto||''}</option>`).join('');
+}
+
+const MES_NOMBRES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+
+async function loadGastoMensual(obraId){
+  const wrap = document.getElementById('gasto-mensual-wrap');
+  wrap.innerHTML = '<div class="loading">Cargando…</div>';
+  const { data, error } = await sb.from('v_gasto_mensual').select('*').eq('obra_id', obraId).order('mes');
+  if (error){ wrap.innerHTML = '<div class="empty">Error: ' + error.message + '</div>'; return; }
+  if (!data.length){ wrap.innerHTML = '<div class="empty">Sin pagos registrados todavía.</div>'; return; }
+  const max = Math.max(...data.map(d => Number(d.total_pagado || 0)), 1);
+  let html = '<div class="mes-chart">';
+  for (const d of data){
+    const val = Number(d.total_pagado || 0);
+    const heightPct = Math.max(2, (val / max) * 100);
+    const dt = new Date(d.mes + 'T00:00:00');
+    const label = isNaN(dt) ? d.mes : `${MES_NOMBRES[dt.getMonth()]} ${dt.getFullYear()}`;
+    html += `<div class="mes-col">
+      <div class="mes-val">${fmtMoney(val)}</div>
+      <div class="mes-bar" style="height:${heightPct}%"></div>
+      <div class="mes-label">${label}</div>
+    </div>`;
+  }
+  html += '</div>';
+  wrap.innerHTML = html;
+}
+
+document.getElementById('form-report').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!currentObra) return;
+  const btn = document.getElementById('btn-report');
+  const msg = document.getElementById('report-msg');
+  const sel = document.getElementById('report-concepto');
+  const conceptoId = sel.value;
+  const clave = sel.selectedOptions[0]?.dataset.clave || null;
+  const cantidad = parseFloat(document.getElementById('report-cantidad').value);
+  const nombre = document.getElementById('report-nombre').value.trim();
+  const obs = document.getElementById('report-obs').value.trim() || null;
+
+  if (!conceptoId || isNaN(cantidad) || cantidad < 0 || !nombre){
+    msg.className = 'err'; msg.textContent = 'Completa concepto, cantidad y tu nombre.'; return;
+  }
+
+  btn.disabled = true; msg.className = ''; msg.textContent = 'Guardando…';
+  const today = new Date().toISOString().slice(0,10);
+  const { error } = await sb.from('avance_semanal').insert({
+    obra_id: currentObra.obra_id,
+    concepto_id: conceptoId,
+    concepto_clave: clave,
+    fecha_reporte: today,
+    cantidad_construida: cantidad,
+    nombre_reporta: nombre,
+    observaciones: obs,
+    acepto_compromiso: true,
+  });
+  btn.disabled = false;
+
+  if (error){
+    msg.className = 'err'; msg.textContent = 'Error al guardar: ' + error.message; return;
+  }
+  msg.className = 'ok'; msg.textContent = 'Reporte guardado. Actualizando cifras…';
+  document.getElementById('report-cantidad').value = '';
+  document.getElementById('report-obs').value = '';
+
+  // refresh panel_control row for this obra + concept table + concentrado in background
+  const { data: fresh } = await sb.from('v_panel_control').select('*').eq('obra_id', currentObra.obra_id).single();
+  if (fresh){
+    currentObra = fresh;
+    const idx = panelData.findIndex(x => x.obra_id === fresh.obra_id);
+    if (idx >= 0) panelData[idx] = fresh;
+    openDetail(fresh);
+    msg.className = 'ok'; msg.textContent = 'Reporte guardado y cifras actualizadas.';
+  }
+});
+</script>
+</body>
+</html>
