@@ -854,6 +854,7 @@
       <div id="concentrado-loading" class="loading">Cargando datos…</div>
 
       <div id="concentrado-body" class="hidden">
+        <div id="aviso-gasto-provisional"></div>
         <div class="toolbar-row">
           <div class="menu-acciones">
             <button class="btn-menu" id="btn-menu-acciones" aria-haspopup="true" aria-expanded="false" title="Acciones">⋯</button>
@@ -1531,12 +1532,17 @@ async function loadConcentrado(){
   // en loadSupervisionChecklist), sin afectar nada más. Posiciones fijas en el array (con
   // Promise.resolve como relleno cuando no se pide cobranza) para no depender del orden
   // condicional de un push.
-  const [panelRes, obrasRes, cobranzaRes, obrasCreadasRes] = await Promise.all([
+  const [panelRes, obrasRes, cobranzaRes, obrasCreadasRes, gastoAManoRes] = await Promise.all([
     sb.from('v_panel_control').select('*').order('nombre'),
     sb.from('obras').select('id,activo,estado'),
     pedirCobranza ? sb.from('cobranza').select('obra_id') : Promise.resolve({ data: null, error: null }),
     sb.from('obras').select('id,created_at'),
+    // cuánto del gasto sigue cargado a mano, sin rastro a Odoo. Va en su propia consulta y
+    // sin revisar el error a propósito: si la columna todavía no existe, simplemente no se
+    // muestra el aviso y el tablero sigue funcionando igual.
+    sb.from('costo_directo_odoo').select('total_pagado', { count: 'exact' }).is('odoo_record_id', null),
   ]);
+  renderAvisoGastoProvisional(gastoAManoRes);
   document.getElementById('concentrado-loading').classList.add('hidden');
   document.getElementById('concentrado-body').classList.remove('hidden');
 
@@ -3664,6 +3670,29 @@ document.getElementById('btn-borradores-cerrar').addEventListener('click', () =>
 // ---------- DETALLE / PANEL DE CONTROL ----------
 // Regreso al Concentrado desde un solo lugar: lo usan el enlace "Volver", el logo del
 // header y la tecla Escape (pedido de Saul: un regreso más rápido y fluido).
+// Mientras el gasto de las obras siga siendo el que se cargó a mano, el tablero muestra
+// menos gasto del real y por lo tanto MÁS utilidad de la real. Es seguro capturar avance,
+// cobranza y comentarios, pero no es seguro decidir sobre utilidad. Este aviso se apaga
+// solo en cuanto se limpie ese gasto y se importe la exportación de Odoo.
+function renderAvisoGastoProvisional(res){
+  const cont = document.getElementById('aviso-gasto-provisional');
+  if (!cont) return;
+  const filas = (res && !res.error && res.data) ? res.data : null;
+  if (!filas || !filas.length){ cont.innerHTML = ''; return; }
+  // Supabase entrega cuando mucho 1000 filas por consulta; el conteo exacto sí viene aparte,
+  // así que cuando la suma se quedó corta se dice "más de" en vez de dar un número falso.
+  const monto = filas.reduce((a, r) => a + (Number(r.total_pagado) || 0), 0);
+  const nTotal = (res.count === null || res.count === undefined) ? filas.length : res.count;
+  const montoTxt = nTotal > filas.length ? `más de ${fmtMoney(monto)}` : fmtMoney(monto);
+  cont.innerHTML = `<div class="data-gap-banner"><b>El gasto todavía no viene de Odoo.</b>
+    Los ${nTotal} movimientos de gasto que ves (${montoTxt}) se cargaron a mano y
+    están atrasados respecto a Odoo. Como el gasto sale bajo, la <b>utilidad proyectada sale más
+    alta de lo que realmente es</b> y el semáforo se ve mejor de lo que está.
+    <br><br>Mientras tanto sí puedes capturar avance, cobranza, ingresos y comentarios con
+    confianza — eso no depende del gasto. Lo que conviene no decidir todavía es sobre utilidad.
+    Este aviso desaparece solo en cuanto se importe la exportación de Odoo.</div>`;
+}
+
 function volverAlConcentrado(){
   const detalle = document.getElementById('detail-screen');
   if (detalle.classList.contains('hidden')) return false;
