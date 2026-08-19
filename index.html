@@ -1225,7 +1225,7 @@
   <div id="modal-importar-gastos" class="modal-overlay hidden">
     <div class="modal-box" style="max-width:760px;">
       <h3>Importar gastos desde Odoo</h3>
-      <div class="desc">Sube el Excel exportado de Odoo (Compra → Solicitudes de cotización), con las columnas ID, Estado, Proyecto, Proveedor, Total, Referencia de la orden, Fecha de confirmación. Se cuenta todo lo que traiga el archivo, tal como está marcado en Odoo — no se descarta nada por estado.</div>
+      <div class="desc">Sube el Excel tal cual sale de Odoo (Compra → Solicitudes de cotización → seleccionar todo → Acciones → Exportar), con las columnas <b>ID, Estado, Proyecto, Proveedor, Total, Referencia de la orden, Fecha de confirmación y Fecha límite de la orden</b>. No hace falta recortarlo: solo entran las órdenes cuyo proyecto corresponde a una obra dada de alta, y antes de guardar se muestra qué quedó fuera. Las canceladas se guardan pero no suman al gasto.</div>
       <div class="field">
         <input type="file" id="import-gastos-file" accept=".xlsx,.xls">
       </div>
@@ -3104,7 +3104,10 @@ function analizarWorkbookGastos(workbook, nombreArchivo){
   // encontrar fila de encabezados buscando "ID" y "Proyecto" entre las primeras filas
   let headerRowIdx = -1, colMap = {};
   const wanted = { id:'id', estado:'estado', proyecto:'proyecto', proveedor:'proveedor', total:'total',
-    'referencia de la orden':'referencia', 'fecha de confirmación':'fecha_confirmacion', 'fecha de confirmacion':'fecha_confirmacion' };
+    'referencia de la orden':'referencia', 'fecha de confirmación':'fecha_confirmacion', 'fecha de confirmacion':'fecha_confirmacion',
+    // en Odoo la mayoría de las órdenes se quedan sin confirmar; sin una fecha el gasto no
+    // aparece en el resumen mensual, así que usamos la fecha de la orden como respaldo
+    'fecha límite de la orden':'fecha_orden', 'fecha limite de la orden':'fecha_orden', 'fecha de la orden':'fecha_orden' };
   for (let r = 0; r < Math.min(rows.length, 5); r++){
     const row = rows[r] || [];
     const map = {};
@@ -3137,7 +3140,8 @@ function analizarWorkbookGastos(workbook, nombreArchivo){
       proveedor: colMap.proveedor !== undefined ? (row[colMap.proveedor] || null) : null,
       total,
       referencia: colMap.referencia !== undefined ? (row[colMap.referencia] || null) : null,
-      fecha_confirmacion: colMap.fecha_confirmacion !== undefined ? fechaOdooToISO(row[colMap.fecha_confirmacion]) : null,
+      fecha_confirmacion: (colMap.fecha_confirmacion !== undefined ? fechaOdooToISO(row[colMap.fecha_confirmacion]) : null)
+        || (colMap.fecha_orden !== undefined ? fechaOdooToISO(row[colMap.fecha_orden]) : null),
     });
   }
   if (!filasArchivo.length){
@@ -3156,8 +3160,14 @@ async function prepararPreviewGastos(filasArchivo){
   if (existErr){
     return { schemaError: true, schemaErrorMsg: existErr.message };
   }
+  // El gasto que ya estaba en el tablero se cargó a mano y no trae odoo_record_id. Si esas
+  // filas siguen ahí y ahora se importa el mismo gasto desde Odoo, quedaría contado dos veces
+  // y la utilidad proyectada de cada obra saldría mal. Hay que avisarlo antes de guardar.
+  const { count: nCargadoAMano } = await sb.from('costo_directo_odoo')
+    .select('id', { count: 'exact', head: true }).is('odoo_record_id', null);
+
   const existentesSet = new Set((existentes || []).map(r => r.odoo_record_id).filter(Boolean));
-  const nuevas = filasArchivo.filter(f => !existentesSet.has(f.id));
+  let nuevas = filasArchivo.filter(f => !existentesSet.has(f.id));
   const omitidas = filasArchivo.length - nuevas.length;
 
   const obrasConClave = (obrasData || []).filter(o => o.clave_odoo && o.clave_odoo.trim());
@@ -3175,6 +3185,14 @@ async function prepararPreviewGastos(filasArchivo){
     }
   }
 
+  // El export completo de Odoo trae toda la empresa: nómina, diesel, taller, banco de
+  // agregados, impuestos y las obras de años anteriores. Nada de eso es costo directo de
+  // las obras del tablero, y si se importara taparía el resumen mensual. Se deja fuera y
+  // se muestra abajo cuánto fue, para que quede claro qué NO entró.
+  const fueraDeAlcance = nuevas.filter(f => !f.obra_id);
+  const montoFueraDeAlcance = fueraDeAlcance.reduce((a, f) => a + (Number(f.total) || 0), 0);
+  nuevas = nuevas.filter(f => f.obra_id);
+
   const gruposMap = new Map();
   nuevas.forEach((f, idx) => {
     const key = `${(f.proveedor||'').trim().toUpperCase()}|${f.total}|${f.fecha_confirmacion || 'SIN_FECHA'}`;
@@ -3191,6 +3209,8 @@ async function prepararPreviewGastos(filasArchivo){
   return {
     schemaError: false, nuevas, omitidas,
     obrasDetectadas: [...obrasDetectadas], proyectosSinEmparejar: [...proyectosSinEmparejar],
+    nFueraDeAlcance: fueraDeAlcance.length, montoFueraDeAlcance,
+    nCargadoAMano: nCargadoAMano || 0,
     grupos, totalArchivo: filasArchivo.length,
   };
 }
@@ -3199,7 +3219,9 @@ function actualizarBotonConfirmarGastos(){
   const btn = document.getElementById('btn-import-gastos-confirmar');
   if (!gastosImportState || gastosImportState.schemaError){ btn.disabled = true; return; }
   const todosResueltos = gastosImportState.grupos.every(g => g.resuelto);
-  btn.disabled = !todosResueltos;
+  const chkRiesgo = document.getElementById('chk-riesgo-doble');
+  const riesgoAceptado = !gastosImportState.nCargadoAMano || (chkRiesgo && chkRiesgo.checked);
+  btn.disabled = !todosResueltos || !riesgoAceptado || !gastosImportState.nuevas.length;
 }
 
 function renderGastosDuplicados(){
@@ -3257,16 +3279,24 @@ function renderGastosPreview(){
     <div class="stat"><div class="label">Nuevas a importar</div><div class="value">${s.nuevas.length}</div></div>
     <div class="stat"><div class="label">Ya importadas antes (se omiten)</div><div class="value">${s.omitidas}</div></div>
     <div class="stat"><div class="label">Obras detectadas</div><div class="value">${s.obrasDetectadas.length}</div></div>
-    <div class="stat"><div class="label">Proyectos sin emparejar (quedan pendientes)</div><div class="value">${s.proyectosSinEmparejar.length}</div></div>
+    <div class="stat"><div class="label">Fuera de las obras del tablero (no se importan)</div><div class="value">${s.nFueraDeAlcance}</div></div>
     <div class="stat"><div class="label">Grupos con posible duplicado</div><div class="value">${s.grupos.length}</div></div>
   </div>`;
+  if (s.nCargadoAMano){
+    html += `<div class="import-issues errores"><div class="issue-title">⚠ Cuidado: el gasto se contaría dos veces</div>
+      <div class="desc">Ya hay <b>${s.nCargadoAMano} movimientos</b> de gasto en el tablero que se cargaron a mano y no tienen rastro a Odoo. Este importador solo sabe evitar repetidos cuando el movimiento ya vino de Odoo antes. Si ese gasto a mano es el mismo que trae este archivo, al guardar quedaría sumado dos veces y la utilidad proyectada de todas las obras saldría mal.<br><br>
+      <b>Lo recomendable:</b> borrar primero esos movimientos cargados a mano (en Supabase: <code>delete from costo_directo_odoo where odoo_record_id is null;</code>) y luego importar. Así el gasto queda viniendo de una sola fuente: Odoo.</div>
+      <label class="chk-inline" style="margin-top:10px;"><input type="checkbox" id="chk-riesgo-doble"> Ya lo revisé, sé lo que estoy haciendo y quiero continuar</label></div>`;
+  }
   if (s.obrasDetectadas.length){
     html += `<div class="desc">Obras detectadas: ${s.obrasDetectadas.map(esc).join(', ')}</div>`;
   }
   if (s.proyectosSinEmparejar.length){
-    html += `<div class="import-issues advertencias"><div class="issue-title">Proyectos de Odoo sin emparejar con ninguna obra (entran como "pendiente por asignar")</div><ul>${s.proyectosSinEmparejar.map(p => `<li>${esc(p)}</li>`).join('')}</ul></div>`;
+    html += `<div class="import-issues advertencias"><div class="issue-title">No se importan ${s.nFueraDeAlcance} órdenes por ${fmtMoney(s.montoFueraDeAlcance)} — su proyecto de Odoo no es ninguna de las obras dadas de alta</div><div class="desc">Son nómina, diesel, taller, banco de agregados, impuestos y obras de años anteriores. Si alguna de la lista sí debe entrar, dale de alta la obra con su clave de Odoo y vuelve a subir el archivo.</div><ul>${s.proyectosSinEmparejar.slice(0, 40).map(p => `<li>${esc(p)}</li>`).join('')}${s.proyectosSinEmparejar.length > 40 ? `<li>…y ${s.proyectosSinEmparejar.length - 40} proyectos más</li>` : ''}</ul></div>`;
   }
   wrap.innerHTML = html;
+  const chkRiesgo = document.getElementById('chk-riesgo-doble');
+  if (chkRiesgo) chkRiesgo.addEventListener('change', actualizarBotonConfirmarGastos);
   renderGastosDuplicados();
   actualizarBotonConfirmarGastos();
 }
@@ -3547,7 +3577,10 @@ document.getElementById('btn-import-gastos-confirmar').addEventListener('click',
 
   const filasInsert = filasFinal.map(f => ({
     obra_id: f.obra_id, proveedor: f.proveedor, proyecto: f.proyecto, estado: f.estado,
-    referencia_orden: f.referencia, total_pagado: f.total, considerar_en_costo: true,
+    referencia_orden: f.referencia, total_pagado: f.total,
+    // una orden cancelada en Odoo no es dinero gastado; se guarda para no perder el rastro,
+    // pero no suma al costo (se puede cambiar a mano desde el detalle de la obra)
+    considerar_en_costo: String(f.estado || '').trim().toLowerCase() !== 'cancelado',
     odoo_record_id: f.id, fecha_gasto: f.fecha_confirmacion, clasificacion: f.clasificacion,
     lote_importacion_id: lote.id,
   }));
