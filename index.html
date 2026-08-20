@@ -3162,9 +3162,16 @@ async function prepararPreviewGastos(filasArchivo){
     return { schemaError: true, schemaErrorMsg: obrasErr.message };
   }
   const ids = filasArchivo.map(f => f.id);
-  const { data: existentes, error: existErr } = await sb.from('costo_directo_odoo').select('odoo_record_id').in('odoo_record_id', ids);
-  if (existErr){
-    return { schemaError: true, schemaErrorMsg: existErr.message };
+  // Se pregunta por tandas: el export de Odoo trae miles de renglones, y preguntar por todos los
+  // IDs de un jalón arma una dirección tan larga que el servidor la rechaza con "Bad Request".
+  const existentesSet = new Set();
+  for (let i = 0; i < ids.length; i += 200){
+    const { data: existentes, error: existErr } = await sb.from('costo_directo_odoo')
+      .select('odoo_record_id').in('odoo_record_id', ids.slice(i, i + 200));
+    if (existErr){
+      return { schemaError: true, schemaErrorMsg: existErr.message };
+    }
+    (existentes || []).forEach(r => { if (r.odoo_record_id) existentesSet.add(r.odoo_record_id); });
   }
   // El gasto que ya estaba en el tablero se cargó a mano y no trae odoo_record_id. Si esas
   // filas siguen ahí y ahora se importa el mismo gasto desde Odoo, quedaría contado dos veces
@@ -3172,7 +3179,6 @@ async function prepararPreviewGastos(filasArchivo){
   const { count: nCargadoAMano } = await sb.from('costo_directo_odoo')
     .select('id', { count: 'exact', head: true }).is('odoo_record_id', null);
 
-  const existentesSet = new Set((existentes || []).map(r => r.odoo_record_id).filter(Boolean));
   let nuevas = filasArchivo.filter(f => !existentesSet.has(f.id));
   const omitidas = filasArchivo.length - nuevas.length;
 
@@ -3276,7 +3282,7 @@ function renderGastosPreview(){
   const wrap = document.getElementById('import-gastos-preview');
   const s = gastosImportState;
   if (s.schemaError){
-    wrap.innerHTML = `<div class="import-issues errores"><div class="issue-title">⚠ Todavía falta correr el cambio de base de datos</div><ul><li>Este importador necesita las columnas nuevas de la migración de Etapa 3 (odoo_record_id, clave_odoo, etc.). Corre el archivo .sql que te mandé en el editor SQL de Supabase y vuelve a intentar. Detalle técnico: ${esc(s.schemaErrorMsg)}</li></ul></div>`;
+    wrap.innerHTML = `<div class="import-issues errores"><div class="issue-title">⚠ No se pudo preparar la importación</div><ul><li>La base contestó: <b>${esc(s.schemaErrorMsg)}</b></li><li>Si dice que no existe una columna (<code>odoo_record_id</code>, <code>clave_odoo</code>…), falta correr la migración de Etapa 3 en el editor SQL de Supabase. Si dice otra cosa, pásasela a Saúl tal cual — no se resuelve reintentando.</li></ul></div>`;
     document.getElementById('import-gastos-duplicados').innerHTML = '';
     return;
   }
@@ -3571,7 +3577,9 @@ document.getElementById('btn-import-gastos-confirmar').addEventListener('click',
     n_filas_omitidas_ya_importadas: gastosImportState.omitidas,
     n_posibles_duplicados_marcados_como_reales: gastosImportState.grupos.filter(g => g.modo === 'reales').length,
     n_posibles_duplicados_marcados_como_error: gastosImportState.grupos.filter(g => g.modo === 'elegir').length,
-    obras_detectadas: gastosImportState.obrasDetectadas,
+    // la columna es integer (un conteo), no la lista de nombres: los nombres ya se ven
+    // en la pantalla de revisión y no hacen falta en el registro del lote
+    obras_detectadas: gastosImportState.obrasDetectadas.length,
     proyectos_sin_emparejar: gastosImportState.proyectosSinEmparejar,
   }).select().single();
   if (loteErr){
