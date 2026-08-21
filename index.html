@@ -3910,7 +3910,7 @@ function updateDetailEstadoUI(r){
   // no exista todavía ningún avance semanal ni pago capturado que pudiera perderse al importar
   // (ver validación adicional en confirmarImportacionPresupuesto, que igual revisa esto en la
   // base de datos antes de escribir nada, por si alguien llega aquí con datos ya capturados).
-  const puedeImportarPresupuesto = estado === 'borrador' && (currentRole === 'gerencia' || currentRole === 'costos_presupuestos');
+  const puedeImportarPresupuesto = estado === 'borrador' && (currentRole === 'gerencia' || currentRole === 'costos_presupuestos' || currentRole === 'supervision');
 
   document.getElementById('btn-enviar-revision').style.display = puedeEnviarRevision ? '' : 'none';
   document.getElementById('btn-autorizar-obra').style.display = puedeAutorizar ? '' : 'none';
