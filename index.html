@@ -539,6 +539,22 @@
     width:100%; box-sizing:border-box; padding:10px 12px; border-radius:10px; border:1px solid var(--border);
     background:var(--bg); color:var(--text); font-size:13.5px; font-family:inherit; resize:vertical; margin-bottom:8px;
   }
+  .clave-odoo{display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; margin:0 0 14px;
+    padding:11px 14px; border-radius:10px; border:1px solid rgba(255,137,117,.28);
+    background:linear-gradient(180deg, rgba(255,137,117,.10), rgba(255,137,117,.04));}
+  .clave-odoo.sin{border-color:rgba(255,255,255,.10); background:rgba(255,255,255,.03);}
+  .clave-odoo .ct{font-size:12px; color:var(--muted); letter-spacing:.02em;}
+  .clave-odoo .hint{flex-basis:100%; font-size:12px; color:var(--muted); line-height:1.5;}
+  .clave-odoo .clave-val{display:inline-flex; align-items:center; gap:9px; cursor:pointer;
+    font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:15px; font-weight:650;
+    letter-spacing:.02em; color:#ffb9a8; background:rgba(0,0,0,.30);
+    border:1px solid rgba(255,137,117,.34); border-radius:8px; padding:6px 12px;
+    transition:border-color .18s var(--ease), color .18s var(--ease), background .18s var(--ease);}
+  .clave-odoo .clave-val:hover{border-color:rgba(255,137,117,.62); background:rgba(0,0,0,.44);}
+  .clave-odoo .clave-val .cp{font-family:inherit; font-size:10.5px; font-weight:600; letter-spacing:.06em;
+    text-transform:uppercase; color:var(--muted);}
+  .clave-odoo .clave-val.copiada{border-color:rgba(120,220,150,.6); color:#9de8b6;}
+  .clave-odoo .clave-val.copiada .cp{color:#9de8b6;}
   .chk-inline{display:inline-flex; align-items:center; gap:6px; font-size:13.5px; color:var(--muted); margin-right:12px; cursor:pointer;}
   #comentario-msg{font-size:13.5px; margin:8px 0; min-height:16px;}
   #comentario-msg.ok{color:var(--ok);} #comentario-msg.err{color:var(--alert);}
@@ -1046,10 +1062,12 @@
             <div class="desc" style="margin:0;">Lo que <b>nosotros hemos gastado</b> en esta obra (compras a proveedores registradas en Odoo). No confundir con lo cobrado al cliente, que va en la pestaña Cobranza.</div>
             <button class="btn-small" id="btn-importar-gastos-odoo-tab" data-feature="importar-gastos-odoo">↑ Subir exportación de Odoo</button>
           </div>
+          <div id="odoo-clave-obra"></div>
           <form class="report" id="form-odoo">
             <div class="field"><label>Comprador</label><input id="odoo-comprador" type="text" required placeholder="Nombre"></div>
             <div class="field"><label>Proveedor</label><input id="odoo-proveedor" type="text" placeholder="—"></div>
             <div class="field"><label>Rubro</label><input id="odoo-rubro" type="text" placeholder="—"></div>
+            <div class="field"><label>Fecha del gasto</label><input id="odoo-fecha" type="date"></div>
             <div class="field"><label>Referencia de orden</label><input id="odoo-referencia" type="text" placeholder="—"></div>
             <div class="field"><label>Total gastado</label><input id="odoo-total" type="number" step="any" min="0" required placeholder="0.00"></div>
             <div class="field">
@@ -1540,7 +1558,8 @@ async function loadConcentrado(){
     // cuánto del gasto sigue cargado a mano, sin rastro a Odoo. Va en su propia consulta y
     // sin revisar el error a propósito: si la columna todavía no existe, simplemente no se
     // muestra el aviso y el tablero sigue funcionando igual.
-    sb.from('costo_directo_odoo').select('total_pagado', { count: 'exact' }).is('odoo_record_id', null),
+    sb.from('costo_directo_odoo').select('total_pagado', { count: 'exact' })
+      .is('odoo_record_id', null).neq('estado', 'Manual'),
   ]);
   renderAvisoGastoProvisional(gastoAManoRes);
   document.getElementById('concentrado-loading').classList.add('hidden');
@@ -3177,7 +3196,8 @@ async function prepararPreviewGastos(filasArchivo){
   // filas siguen ahí y ahora se importa el mismo gasto desde Odoo, quedaría contado dos veces
   // y la utilidad proyectada de cada obra saldría mal. Hay que avisarlo antes de guardar.
   const { count: nCargadoAMano } = await sb.from('costo_directo_odoo')
-    .select('id', { count: 'exact', head: true }).is('odoo_record_id', null);
+    .select('id', { count: 'exact', head: true })
+    .is('odoo_record_id', null).neq('estado', 'Manual');
 
   let nuevas = filasArchivo.filter(f => !existentesSet.has(f.id));
   const omitidas = filasArchivo.length - nuevas.length;
@@ -3979,6 +3999,42 @@ async function loadTab(tab){
   if (tab === 'cobranza') return loadCobranza();
 }
 
+// La clave de Odoo es lo que va en el campo "Proyecto" al capturar una compra. Si ese campo
+// va vacío, el gasto no llega a ninguna obra: por eso se muestra grande y con botón de copiar.
+async function renderClaveOdoo(){
+  const cont = document.getElementById('odoo-clave-obra');
+  if (!cont || !currentObra) return;
+  const obraId = currentObra.obra_id;
+  const { data } = await sb.from('obras').select('clave_odoo').eq('id', obraId).maybeSingle();
+  if (!currentObra || currentObra.obra_id !== obraId) return; // cambió de obra mientras cargaba
+  const clave = ((data && data.clave_odoo) || '').trim();
+  if (!clave){
+    cont.innerHTML = `<div class="clave-odoo sin"><span class="ct">Esta obra no tiene clave de Odoo</span>
+      <span class="hint">Sin clave, los gastos que se capturen en Odoo no se pueden asignar a esta obra. Pídeselo a Gerencia.</span></div>`;
+    return;
+  }
+  cont.innerHTML = `<div class="clave-odoo">
+    <span class="ct">Clave para el campo "Proyecto" de Odoo</span>
+    <button type="button" class="clave-val" id="btn-copiar-clave" title="Clic para copiar">${esc(clave)}<span class="cp">copiar</span></button>
+    <span class="hint">Pégala tal cual en Odoo al capturar la compra. Si ese campo va vacío, el gasto no llega a ninguna obra.</span>
+  </div>`;
+  const btn = document.getElementById('btn-copiar-clave');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(clave); }
+    catch (err) {
+      // navigator.clipboard no existe si la página se abre como archivo local sin https
+      const ta = document.createElement('textarea');
+      ta.value = clave; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch (e2) {}
+      ta.remove();
+    }
+    const cp = btn.querySelector('.cp');
+    cp.textContent = 'copiada'; btn.classList.add('copiada');
+    setTimeout(() => { cp.textContent = 'copiar'; btn.classList.remove('copiada'); }, 1600);
+  });
+}
+
 function tableHtml(headers, rows, rowFn, emptyMsg){
   if (!rows.length) return `<div class="empty">${emptyMsg}</div>`;
   let html = '<table><thead><tr>' + headers.map(h => `<th${h.num?' class="num"':''}>${h.label}</th>`).join('') + '</tr></thead><tbody>';
@@ -4023,14 +4079,23 @@ async function loadInsumos(){
 }
 
 async function loadOdoo(){
+  renderClaveOdoo();
   const wrap = document.getElementById('odoo-wrap');
   wrap.innerHTML = '<div class="loading">Cargando…</div>';
-  const { data, error } = await sb.from('costo_directo_odoo').select('*').eq('obra_id', currentObra.obra_id).order('fecha_limite_orden', {ascending:false});
+  const { data, error } = await sb.from('costo_directo_odoo').select('*').eq('obra_id', currentObra.obra_id);
   if (error){ wrap.innerHTML = '<div class="empty">Error: ' + error.message + '</div>'; return; }
+  // lo más reciente primero, y sin fecha hasta abajo
+  const fechaDe = c => c.fecha_gasto || c.fecha_limite_orden || '';
+  const ordenados = (data || []).slice().sort((a, b) => {
+    const fa = fechaDe(a), fb = fechaDe(b);
+    if (fa && fb && fa !== fb) return fb.localeCompare(fa);
+    if (fa !== fb) return fa ? -1 : 1;
+    return Number(b.id || 0) - Number(a.id || 0);
+  });
   wrap.innerHTML = tableHtml(
     [{label:'Fecha'},{label:'Comprador'},{label:'Proveedor'},{label:'Rubro'},{label:'Referencia'},{label:'Total gastado',num:true},{label:'¿Cuenta?'}],
-    data,
-    c => `<tr><td>${esc(c.fecha_limite_orden||'—')}</td><td>${esc(c.comprador||'')}</td><td>${esc(c.proveedor||'')}</td><td>${esc(c.rubro||'')}</td>
+    ordenados,
+    c => `<tr><td>${esc(fechaDe(c) || '—')}</td><td>${esc(c.comprador||'')}</td><td>${esc(c.proveedor||'')}</td><td>${esc(c.rubro||'')}</td>
       <td>${esc(c.referencia_orden||'')}</td><td class="num">${fmtMoney(c.total_pagado)}</td><td>${c.considerar_en_costo ? 'Sí' : 'No'}</td></tr>`,
     'Sin pagos registrados.'
   );
@@ -4076,6 +4141,8 @@ document.getElementById('form-odoo').addEventListener('submit', async (e) => {
   const proveedor = document.getElementById('odoo-proveedor').value.trim() || null;
   const rubro = document.getElementById('odoo-rubro').value.trim() || null;
   const referencia = document.getElementById('odoo-referencia').value.trim() || null;
+  // sin fecha el gasto no aparece en el Resumen mensual, así que si no la ponen se usa hoy
+  const fecha = document.getElementById('odoo-fecha').value || new Date().toISOString().slice(0,10);
   const total = parseFloat(document.getElementById('odoo-total').value);
   const considerar = document.getElementById('odoo-considerar').value === 'true';
 
@@ -4089,6 +4156,7 @@ document.getElementById('form-odoo').addEventListener('submit', async (e) => {
     referencia_orden: referencia,
     total_pagado: total,
     considerar_en_costo: considerar,
+    fecha_gasto: fecha,
     estado: 'Manual',
   });
   btn.disabled = false;
