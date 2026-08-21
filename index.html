@@ -947,6 +947,7 @@
       <div id="detail-data-gap" class="data-gap-banner hidden"></div>
 
       <div id="detail-kpis" class="kpis"></div>
+      <div id="aviso-comision"></div>
 
       <section class="block" id="modcontrato-historial-block" data-feature="modificar-contrato,kpi-utilproy">
         <h3>Modificaciones al contrato</h3>
@@ -1336,7 +1337,7 @@ const ROLE_FEATURES = {
     'dtab-odoo','dtab-ingresos',
     'kpi-odoo','importar-gastos-odoo'],
   supervision: ['tab-resumen','tab-todas','tab-equilibrio','tab-supervision','archivar',
-    'dtab-ganador','dtab-insumos','dtab-odoo','dtab-cobranza','dtab-ingresos',
+    'dtab-ganador','dtab-insumos','dtab-odoo','dtab-cobranza','dtab-ingresos','modificar-contrato',
     'avance-form','avance-tabla','kpi-costo','kpi-odoo','kpi-disponible','kpi-utilpres','kpi-utilproy','kpi-pendiente',
     'bar-construido','bar-gastado','bar-cobrado'],
 };
@@ -3760,6 +3761,29 @@ document.addEventListener('keydown', (e) => {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 });
 
+async function renderAvisoComision(r){
+  const cont = document.getElementById('aviso-comision');
+  if (!cont || !r) return;
+  cont.innerHTML = '';
+  const obraId = r.obra_id;
+  const { data } = await sb.from('obras').select('comision_aplica,comision_pct').eq('id', obraId).maybeSingle();
+  if (!data || !currentObra || currentObra.obra_id !== obraId) return;
+  if (!data.comision_aplica) return;   // obra privada: no lleva comisión, no hay nada que avisar
+  const pct = Number(data.comision_pct || 0);
+  if (pct > 0){
+    cont.innerHTML = `<div class="data-gap-banner" style="background:rgba(255,255,255,.04); border-color:rgba(255,255,255,.09);">
+      Obra pública con <b>${(pct * 100).toLocaleString('es-MX', {maximumFractionDigits:2})}% de comisión</b>
+      sobre el subtotal del presupuesto ganador (${fmtMoney(r.precio_venta_sin_iva)}) =
+      <b>${fmtMoney(r.comision_obra_publica)}</b>. Ya está descontada de la utilidad presupuestada y de la proyectada.</div>`;
+    return;
+  }
+  cont.innerHTML = `<div class="data-gap-banner"><b>Falta capturar el % de comisión de esta obra.</b>
+    Está marcada como obra pública, pero no tiene porcentaje. Mientras esté vacío el tablero lo toma
+    como cero, así que <b>la utilidad que ves aquí sale más alta de lo real</b>.
+    Captúralo en <b>Editar datos del contrato</b> — es el % acordado sobre el subtotal del
+    presupuesto ganador, y cambia de contrato a contrato (15%, 20%, 25%…).</div>`;
+}
+
 function buildDetailKpisHtml(r){
   // data-tab: pestaña del detalle donde se puede ver de dónde salió ese número. Los KPIs
   // que lo traen se vuelven clickeables (pedido de Saul: que la info funcione como botón
@@ -3920,6 +3944,7 @@ async function openDetail(r){
 
   document.getElementById('detail-kpis').innerHTML = buildDetailKpisHtml(r);
   conectarKpisDetalle();
+  renderAvisoComision(r);
   document.getElementById('ritmo-wrap').innerHTML = '<div class="loading">Cargando…</div>';
   renderRitmoObra(r);
 
