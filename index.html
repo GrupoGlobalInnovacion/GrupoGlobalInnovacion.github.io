@@ -961,6 +961,7 @@
             <h3 style="margin:0;">Ritmo de obra</h3>
             <div class="desc" style="margin:4px 0 0;">Cuánto hay que avanzar por día para concluir en tiempo y forma, contra el ritmo que se lleva.</div>
           </div>
+          <a class="btn-small hidden" id="btn-planos" target="_blank" rel="noopener noreferrer">🗂 Planos de la obra</a>
           <button class="btn-small" id="btn-datos-contrato" data-feature="modificar-contrato">Editar datos del contrato</button>
         </div>
         <div id="ritmo-wrap"></div>
@@ -1195,6 +1196,11 @@
       <div class="field">
         <label for="dc-fecha-fin">Fecha de término contractual</label>
         <input type="date" id="dc-fecha-fin">
+      </div>
+      <div class="field">
+        <label for="dc-planos">Carpeta de planos (liga de Drive)</label>
+        <input type="url" id="dc-planos" placeholder="https://drive.google.com/drive/folders/...">
+        <div class="desc" style="margin:5px 0 0;">Pega aquí la liga de la carpeta de Drive donde viven los planos de esta obra. Aparece como botón en el detalle, para que todos la tengan a la mano.</div>
       </div>
       <div class="modal-msg" id="dc-msg"></div>
       <div class="actions">
@@ -3370,7 +3376,7 @@ document.getElementById('btn-datos-contrato').addEventListener('click', async ()
   openModal('modal-datos-contrato');
 
   const { data, error } = await sb.from('obras')
-    .select('comision_aplica,comision_pct,fecha_inicio,fecha_fin_contractual')
+    .select('comision_aplica,comision_pct,fecha_inicio,fecha_fin_contractual,planos_url')
     .eq('id', currentObra.obra_id).single();
   if (error){
     msg.className = 'modal-msg err'; msg.textContent = 'No se pudieron cargar los datos: ' + error.message;
@@ -3381,6 +3387,7 @@ document.getElementById('btn-datos-contrato').addEventListener('click', async ()
   document.getElementById('dc-comision').value = data.comision_pct ? (Number(data.comision_pct) * 100) : '';
   document.getElementById('dc-fecha-inicio').value = data.fecha_inicio || '';
   document.getElementById('dc-fecha-fin').value = data.fecha_fin_contractual || '';
+  document.getElementById('dc-planos').value = data.planos_url || '';
   toggleCampoComision();
   msg.textContent = '';
 });
@@ -3392,6 +3399,7 @@ document.getElementById('btn-dc-guardar').addEventListener('click', async () => 
   const pctTexto = document.getElementById('dc-comision').value;
   const ini = document.getElementById('dc-fecha-inicio').value || null;
   const fin = document.getElementById('dc-fecha-fin').value || null;
+  const planos = document.getElementById('dc-planos').value.trim();
   const msg = document.getElementById('dc-msg');
   const btn = document.getElementById('btn-dc-guardar');
 
@@ -3401,6 +3409,9 @@ document.getElementById('btn-dc-guardar').addEventListener('click', async () => 
   if (ini && fin && fin < ini){
     msg.className = 'modal-msg err'; msg.textContent = 'La fecha de término no puede ser anterior a la de inicio.'; return;
   }
+  if (planos && !/^https?:\/\//i.test(planos)){
+    msg.className = 'modal-msg err'; msg.textContent = 'La liga de planos debe empezar con http:// o https://'; return;
+  }
 
   const pct = esPublica ? Number(pctTexto) / 100 : 0;
   const cambios = {
@@ -3408,6 +3419,7 @@ document.getElementById('btn-dc-guardar').addEventListener('click', async () => 
     comision_pct: pct,
     fecha_inicio: ini,
     fecha_fin_contractual: fin,
+    planos_url: planos || null,
   };
   if (ini && fin){
     cambios.dias_contractuales = Math.max(1, Math.round((new Date(fin) - new Date(ini)) / 86400000));
@@ -3766,8 +3778,17 @@ async function renderAvisoComision(r){
   if (!cont || !r) return;
   cont.innerHTML = '';
   const obraId = r.obra_id;
-  const { data } = await sb.from('obras').select('comision_aplica,comision_pct').eq('id', obraId).maybeSingle();
+  const { data } = await sb.from('obras').select('comision_aplica,comision_pct,planos_url').eq('id', obraId).maybeSingle();
   if (!data || !currentObra || currentObra.obra_id !== obraId) return;
+  // los planos viven en Drive (decisión de Saul: no subirlos al tablero). Aquí solo se
+  // enlaza la carpeta, para que todos la tengan a la mano desde la obra.
+  const btnPlanos = document.getElementById('btn-planos');
+  if (btnPlanos){
+    const url = (data.planos_url || '').trim();
+    const ok = /^https?:\/\//i.test(url);
+    btnPlanos.classList.toggle('hidden', !ok);
+    if (ok) btnPlanos.href = url;
+  }
   if (!data.comision_aplica) return;   // obra privada: no lleva comisión, no hay nada que avisar
   const pct = Number(data.comision_pct || 0);
   if (pct > 0){
