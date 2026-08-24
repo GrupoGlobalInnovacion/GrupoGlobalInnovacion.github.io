@@ -1394,7 +1394,7 @@ const ROLE_FEATURES = {
     'bar-construido','bar-gastado','bar-cobrado','importar-gastos-odoo','modificar-contrato','kpi-comision'],
   costos_presupuestos: ['tab-todas','nueva-obra','archivar',
     'dtab-ganador','dtab-insumos',
-    'avance-tabla','kpi-costo','kpi-utilpres','bar-construido','modificar-contrato','kpi-comision'],
+    'avance-tabla','kpi-costo','kpi-utilpres','bar-construido','modificar-contrato'],
   administracion: ['tab-todas','tab-equilibrio',
     'dtab-odoo','dtab-ingresos',
     'kpi-odoo','importar-gastos-odoo'],
@@ -3430,7 +3430,9 @@ function renderGastosPreview(){
 // antes de que fueran obligatorias (Gran Batará, etc.).
 function toggleCampoComision(){
   const esPublica = document.getElementById('dc-tipo').value === 'publica';
-  document.getElementById('dc-campo-comision').classList.toggle('hidden', !esPublica);
+  document.getElementById('dc-campo-comision').classList.toggle('hidden', !esPublica || !roleAllows('kpi-comision'));
+  const campoTipo = document.getElementById('dc-tipo').closest('.field');
+  if (campoTipo) campoTipo.classList.toggle('hidden', !roleAllows('kpi-comision'));
 }
 document.getElementById('dc-tipo').addEventListener('change', toggleCampoComision);
 
@@ -3842,6 +3844,7 @@ async function renderAvisoComision(r){
   const cont = document.getElementById('aviso-comision');
   if (!cont || !r) return;
   cont.innerHTML = '';
+  if (!roleAllows('kpi-comision')) return;
   const obraId = r.obra_id;
   const { data } = await sb.from('obras').select('comision_aplica,comision_pct,planos_url').eq('id', obraId).maybeSingle();
   if (!data || !currentObra || currentObra.obra_id !== obraId) return;
@@ -3885,7 +3888,7 @@ function buildDetailKpisHtml(r){
     const monto = Number(r.comision_obra_publica || 0);
     const venta = Number(r.precio_venta_sin_iva || 0);
     const pct = (monto > 0 && venta > 0) ? (monto / venta) * 100 : 0;
-    const puedeEditar = ['gerencia','costos_presupuestos','supervision'].includes(currentRole);
+    const puedeEditar = ['gerencia','supervision'].includes(currentRole);
     const boton = puedeEditar
       ? `<button type="button" class="btn-comision" id="btn-editar-comision">${monto > 0 ? 'Cambiar %' : 'Capturar comisión'}</button>`
       : '';
@@ -3907,7 +3910,7 @@ function buildDetailKpisHtml(r){
     {key:'kpi-utilpres', html:tarjeta('acc-utilidad',
         // se nombra la comisión en la etiqueta cuando aplica, para que se entienda por qué
         // la utilidad es menor que venta − costo (dato que varía por contrato: 20%, 22%…)
-        Number(r.comision_obra_publica || 0) > 0
+        (Number(r.comision_obra_publica || 0) > 0 && roleAllows('kpi-comision'))
           ? `Utilidad presupuestada <span style="opacity:.65;">(ya menos comisión de ${fmtMoney(r.comision_obra_publica)})</span>`
           : 'Utilidad presupuestada',
         fmtMoney(r.utilidad_presupuestada), 'ganador', 'Ver el Presupuesto Ganador')},
