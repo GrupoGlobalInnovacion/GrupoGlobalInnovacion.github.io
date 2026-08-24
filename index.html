@@ -1120,7 +1120,7 @@
         <div id="tab-odoo" class="tab-panel hidden" data-feature="dtab-odoo">
           <div class="panel-head-accion">
             <div class="desc" style="margin:0;">Lo que <b>nosotros hemos gastado</b> en esta obra (compras a proveedores registradas en Odoo). No confundir con lo cobrado al cliente, que va en la pestaña Cobranza.</div>
-            <button class="btn-small" id="btn-importar-gastos-odoo-tab" data-feature="importar-gastos-odoo">↑ Subir exportación de Odoo</button>
+            <button class="btn-small" id="btn-importar-gastos-odoo-tab" data-feature="importar-gastos-odoo">↑ Importar gastos de esta obra</button>
           </div>
           <div id="odoo-clave-obra"></div>
           <form class="report" id="form-odoo">
@@ -1330,8 +1330,8 @@
 
   <div id="modal-importar-gastos" class="modal-overlay hidden">
     <div class="modal-box" style="max-width:760px;">
-      <h3>Importar gastos desde Odoo</h3>
-      <div class="desc">Sube el Excel tal cual sale de Odoo (Compra → Solicitudes de cotización → seleccionar todo → Acciones → Exportar), con las columnas <b>ID, Estado, Proyecto, Proveedor, Total, Referencia de la orden, Fecha de confirmación y Fecha límite de la orden</b>. No hace falta recortarlo: solo entran las órdenes cuyo proyecto corresponde a una obra dada de alta, y antes de guardar se muestra qué quedó fuera. Las canceladas se guardan pero no suman al gasto.</div>
+      <h3 id="import-gastos-titulo">Importar gastos desde Odoo</h3>
+      <div class="desc" id="import-gastos-desc">Sube el Excel tal cual sale de Odoo (Compra → Solicitudes de cotización → seleccionar todo → Acciones → Exportar), con las columnas <b>ID, Estado, Proyecto, Proveedor, Total, Referencia de la orden, Fecha de confirmación y Fecha límite de la orden</b>. No hace falta recortarlo: solo entran las órdenes cuyo proyecto corresponde a una obra dada de alta, y antes de guardar se muestra qué quedó fuera. Las canceladas se guardan pero no suman al gasto.</div>
       <div class="field">
         <input type="file" id="import-gastos-file" accept=".xlsx,.xls">
       </div>
@@ -3200,6 +3200,10 @@ document.getElementById('btn-import-presupuesto-confirmar').addEventListener('cl
 // migración de Etapa 3). Además se detectan "posibles duplicados" — dos movimientos
 // nuevos con mismo proveedor+monto+fecha — y se obliga a revisarlos uno por uno antes
 // de habilitar el botón de confirmar, en vez de decidir solo.
+// Cuando se importa desde dentro de una obra, el archivo se exporta de Odoo ya filtrado por
+// esa obra: entonces TODO lo que traiga es de ella y no hace falta emparejar por clave. Así se
+// evita el importe general y las órdenes sin código de obra simplemente nunca aparecen.
+let gastosImportObra = null; // {obra_id, nombre, clave_odoo} o null = importación general
 let gastosImportState = null; // { filasArchivo, nuevas, omitidas, obrasDetectadas, proyectosSinEmparejar, grupos:[{key, filas, resuelto, modo, excluidos:Set}] }
 
 function fechaOdooToISO(v){
@@ -3301,15 +3305,39 @@ async function prepararPreviewGastos(filasArchivo){
   const obrasConClave = (obrasData || []).filter(o => o.clave_odoo && o.clave_odoo.trim());
   const obrasDetectadas = new Set();
   const proyectosSinEmparejar = new Set();
-  for (const f of nuevas){
-    const proyTxt = (f.proyecto || '').trim().toUpperCase();
-    const match = obrasConClave.find(o => proyTxt.startsWith(o.clave_odoo.trim().toUpperCase()));
-    if (match){
-      f.obra_id = match.id; f.obra_nombre = match.nombre; f.clasificacion = 'obra';
-      obrasDetectadas.add(match.nombre);
-    } else {
-      f.obra_id = null; f.obra_nombre = null; f.clasificacion = 'pendiente';
-      if (f.proyecto) proyectosSinEmparejar.add(f.proyecto);
+
+  if (gastosImportObra){
+    // Todo va a esta obra. Lo único que se revisa es que el archivo no traiga órdenes
+    // marcadas para OTRA obra dada de alta — eso querría decir que se exportó el archivo
+    // equivocado, y meterlas aquí sería un error caro y difícil de rastrear después.
+    const claveEsta = (gastosImportObra.clave_odoo || '').trim().toUpperCase();
+    for (const f of nuevas){
+      const proyTxt = (f.proyecto || '').trim().toUpperCase();
+      const ajena = obrasConClave.find(o => {
+        const c = o.clave_odoo.trim().toUpperCase();
+        return c !== claveEsta && proyTxt.startsWith(c);
+      });
+      if (ajena){
+        f.obra_id = null; f.obra_nombre = ajena.nombre; f.clasificacion = 'ajena';
+        proyectosSinEmparejar.add(`${f.proyecto} → es de "${ajena.nombre}"`);
+      } else {
+        f.obra_id = gastosImportObra.obra_id;
+        f.obra_nombre = gastosImportObra.nombre;
+        f.clasificacion = 'obra';
+        obrasDetectadas.add(gastosImportObra.nombre);
+      }
+    }
+  } else {
+    for (const f of nuevas){
+      const proyTxt = (f.proyecto || '').trim().toUpperCase();
+      const match = obrasConClave.find(o => proyTxt.startsWith(o.clave_odoo.trim().toUpperCase()));
+      if (match){
+        f.obra_id = match.id; f.obra_nombre = match.nombre; f.clasificacion = 'obra';
+        obrasDetectadas.add(match.nombre);
+      } else {
+        f.obra_id = null; f.obra_nombre = null; f.clasificacion = 'pendiente';
+        if (f.proyecto) proyectosSinEmparejar.add(f.proyecto);
+      }
     }
   }
 
@@ -3339,6 +3367,7 @@ async function prepararPreviewGastos(filasArchivo){
     obrasDetectadas: [...obrasDetectadas], proyectosSinEmparejar: [...proyectosSinEmparejar],
     nFueraDeAlcance: fueraDeAlcance.length, montoFueraDeAlcance,
     nCargadoAMano: nCargadoAMano || 0,
+    obraFija: gastosImportObra,
     grupos, totalArchivo: filasArchivo.length,
   };
 }
@@ -3406,8 +3435,10 @@ function renderGastosPreview(){
     <div class="stat"><div class="label">Filas en el archivo</div><div class="value">${s.totalArchivo}</div></div>
     <div class="stat"><div class="label">Nuevas a importar</div><div class="value">${s.nuevas.length}</div></div>
     <div class="stat"><div class="label">Ya importadas antes (se omiten)</div><div class="value">${s.omitidas}</div></div>
-    <div class="stat"><div class="label">Obras detectadas</div><div class="value">${s.obrasDetectadas.length}</div></div>
-    <div class="stat"><div class="label">Fuera de las obras del tablero (no se importan)</div><div class="value">${s.nFueraDeAlcance}</div></div>
+    ${s.obraFija
+      ? `<div class="stat"><div class="label">De otra obra (no se importan)</div><div class="value">${s.nFueraDeAlcance}</div></div>`
+      : `<div class="stat"><div class="label">Obras detectadas</div><div class="value">${s.obrasDetectadas.length}</div></div>
+         <div class="stat"><div class="label">Fuera de las obras del tablero (no se importan)</div><div class="value">${s.nFueraDeAlcance}</div></div>`}
     <div class="stat"><div class="label">Grupos con posible duplicado</div><div class="value">${s.grupos.length}</div></div>
   </div>`;
   if (s.nCargadoAMano){
@@ -3416,11 +3447,17 @@ function renderGastosPreview(){
       <b>Lo recomendable:</b> borrar primero esos movimientos cargados a mano (en Supabase: <code>delete from costo_directo_odoo where odoo_record_id is null;</code>) y luego importar. Así el gasto queda viniendo de una sola fuente: Odoo.</div>
       <label class="chk-inline" style="margin-top:10px;"><input type="checkbox" id="chk-riesgo-doble"> Ya lo revisé, sé lo que estoy haciendo y quiero continuar</label></div>`;
   }
-  if (s.obrasDetectadas.length){
+  if (s.obraFija){
+    html += `<div class="import-issues" style="border-color:rgba(255,137,117,.3); background:rgba(255,137,117,.06);">
+      <div class="issue-title">Todo se va a cargar a: ${esc(s.obraFija.nombre)}</div>
+      <div class="desc" style="margin:0;">${s.nuevas.length} órdenes por ${fmtMoney(s.nuevas.reduce((a,f) => a + (Number(f.total)||0), 0))}.</div></div>`;
+  } else if (s.obrasDetectadas.length){
     html += `<div class="desc">Obras detectadas: ${s.obrasDetectadas.map(esc).join(', ')}</div>`;
   }
   if (s.proyectosSinEmparejar.length){
-    html += `<div class="import-issues advertencias"><div class="issue-title">No se importan ${s.nFueraDeAlcance} órdenes por ${fmtMoney(s.montoFueraDeAlcance)} — su proyecto de Odoo no es ninguna de las obras dadas de alta</div><div class="desc">Son nómina, diesel, taller, banco de agregados, impuestos y obras de años anteriores. Si alguna de la lista sí debe entrar, dale de alta la obra con su clave de Odoo y vuelve a subir el archivo.</div><ul>${s.proyectosSinEmparejar.slice(0, 40).map(p => `<li>${esc(p)}</li>`).join('')}${s.proyectosSinEmparejar.length > 40 ? `<li>…y ${s.proyectosSinEmparejar.length - 40} proyectos más</li>` : ''}</ul></div>`;
+    html += `<div class="import-issues advertencias"><div class="issue-title">${s.obraFija
+        ? `Se dejan fuera ${s.nFueraDeAlcance} órdenes por ${fmtMoney(s.montoFueraDeAlcance)} — están marcadas para otra obra del tablero`
+        : `No se importan ${s.nFueraDeAlcance} órdenes por ${fmtMoney(s.montoFueraDeAlcance)} — su proyecto de Odoo no es ninguna de las obras dadas de alta`}</div><div class="desc">${s.obraFija ? 'Si de verdad son de esta obra, corrige el proyecto en Odoo y vuelve a exportar. Si te equivocaste de archivo, cancela y sube el correcto.' : 'Son nómina, diesel, taller, banco de agregados, impuestos y obras de años anteriores. Si alguna de la lista sí debe entrar, dale de alta la obra con su clave de Odoo y vuelve a subir el archivo.'}</div><ul>${s.proyectosSinEmparejar.slice(0, 40).map(p => `<li>${esc(p)}</li>`).join('')}${s.proyectosSinEmparejar.length > 40 ? `<li>…y ${s.proyectosSinEmparejar.length - 40} proyectos más</li>` : ''}</ul></div>`;
   }
   wrap.innerHTML = html;
   const chkRiesgo = document.getElementById('chk-riesgo-doble');
@@ -3634,7 +3671,23 @@ async function descargarRespaldoCompleto(){
 }
 document.getElementById('btn-respaldo').addEventListener('click', descargarRespaldoCompleto);
 
-function abrirImportadorGastosOdoo(){
+const IMPORT_DESC_GENERAL = 'Sube el Excel tal cual sale de Odoo (Compra → Solicitudes de cotización → seleccionar todo → Acciones → Exportar), con las columnas <b>ID, Estado, Proyecto, Proveedor, Total, Referencia de la orden, Fecha de confirmación y Fecha límite de la orden</b>. No hace falta recortarlo: solo entran las órdenes cuyo proyecto corresponde a una obra dada de alta, y antes de guardar se muestra qué quedó fuera. Las canceladas se guardan pero no suman al gasto.';
+
+function abrirImportadorGastosOdoo(obra){
+  // Si viene una obra, es la importación dirigida: en Odoo se filtra por la clave de esa obra,
+  // se exporta solo eso, y aquí todo se carga a ella. Es más rápido que el importe general y
+  // deja fuera por completo las órdenes que en Odoo no traen proyecto.
+  gastosImportObra = obra || null;
+  const titulo = document.getElementById('import-gastos-titulo');
+  const desc = document.getElementById('import-gastos-desc');
+  if (gastosImportObra){
+    const clave = (gastosImportObra.clave_odoo || '').trim();
+    titulo.textContent = `Importar gastos de: ${gastosImportObra.nombre}`;
+    desc.innerHTML = `En Odoo filtra por el proyecto de esta obra${clave ? ` (<b>${esc(clave)}</b>)` : ''}, exporta solo esas órdenes y súbelas aquí. <b>Todo lo que traiga el archivo se carga a esta obra</b>, así que no hace falta que el proyecto venga bien escrito en cada renglón.<br><br>Si el archivo trae órdenes marcadas para otra obra del tablero, te aviso y las dejo fuera. Las canceladas se guardan pero no suman al gasto.`;
+  } else {
+    titulo.textContent = 'Importar gastos desde Odoo';
+    desc.innerHTML = IMPORT_DESC_GENERAL;
+  }
   gastosImportState = null;
   document.getElementById('import-gastos-file').value = '';
   document.getElementById('import-gastos-preview').innerHTML = '';
@@ -3646,8 +3699,18 @@ function abrirImportadorGastosOdoo(){
 }
 // dos entradas al mismo importador: el botón del Concentrado y el de la pestaña
 // "Costo Directo (Odoo)" dentro de la obra, que es donde Saul lo buscaba.
-document.getElementById('btn-importar-gastos-odoo').addEventListener('click', abrirImportadorGastosOdoo);
-document.getElementById('btn-importar-gastos-odoo-tab').addEventListener('click', abrirImportadorGastosOdoo);
+// desde el Concentrado: importación general, empareja por clave contra las 14 obras
+document.getElementById('btn-importar-gastos-odoo').addEventListener('click', () => abrirImportadorGastosOdoo(null));
+// desde dentro de una obra: todo se carga a esa obra
+document.getElementById('btn-importar-gastos-odoo-tab').addEventListener('click', async () => {
+  if (!currentObra) return;
+  const { data } = await sb.from('obras').select('clave_odoo').eq('id', currentObra.obra_id).maybeSingle();
+  abrirImportadorGastosOdoo({
+    obra_id: currentObra.obra_id,
+    nombre: currentObra.nombre,
+    clave_odoo: (data && data.clave_odoo) || '',
+  });
+});
 document.getElementById('btn-import-gastos-cancelar').addEventListener('click', () => closeModal('modal-importar-gastos'));
 
 document.getElementById('import-gastos-file').addEventListener('change', async (e) => {
@@ -3736,6 +3799,10 @@ document.getElementById('btn-import-gastos-confirmar').addEventListener('click',
   msg.className = 'modal-msg ok'; msg.textContent = `Importación completada: ${filasInsert.length} movimientos nuevos guardados.`;
   gastoConsolidadoLoaded = false;
   await loadConcentrado();
+  if (gastosImportObra && currentObra && currentObra.obra_id === gastosImportObra.obra_id){
+    tabsLoaded['odoo'] = false; loadTab('odoo');
+    refrescarObraActual();
+  }
   setTimeout(() => closeModal('modal-importar-gastos'), 1400);
 });
 
