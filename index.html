@@ -1127,7 +1127,12 @@
         </div>
 
         <div id="tab-insumos" class="tab-panel hidden" data-feature="dtab-insumos">
-          <div class="desc">Explosión de materiales, mano de obra, herramienta y equipo — el techo financiero de la obra.</div>
+          <div class="panel-head-accion">
+            <div class="desc" style="margin:0;">Explosión de materiales, mano de obra, herramienta y equipo — el techo financiero de la obra. De aquí sale el costo directo presupuestado.</div>
+            <button class="btn-small" id="btn-importar-insumos">↑ Importar explosión de insumos</button>
+          </div>
+          <input type="file" id="file-insumos" accept=".xlsx,.xls" style="display:none;">
+          <div class="modal-msg" id="insumos-msg"></div>
           <div id="insumos-wrap"></div>
         </div>
 
@@ -4189,6 +4194,9 @@ function updateDetailEstadoUI(r){
   document.getElementById('btn-devolver-borrador').style.display = puedeDevolver ? '' : 'none';
   document.getElementById('btn-archivar-obra').classList.toggle('hidden', !puedeArchivar);
   document.getElementById('btn-importar-presupuesto').style.display = puedeImportarPresupuesto ? '' : 'none';
+  // el de insumos sí vale en obra activa: se niega solo si ya hay insumos capturados
+  const bi = document.getElementById('btn-importar-insumos');
+  if (bi) bi.style.display = roleAllows('dtab-insumos') && puedeEditarFilas() ? '' : 'none';
 }
 
 async function openDetail(r){
@@ -4608,6 +4616,78 @@ async function loadInsumos(){
   );
   wrap.innerHTML = btnAgregar('generadora_insumos', 'Agregar insumo') + wrap.innerHTML;
 }
+
+// Importar SOLO la explosión de insumos. El importador de presupuesto completo no sirve aquí:
+// solo corre en obras en borrador, y las 14 obras están activas y ya tienen su presupuesto
+// ganador — lo único que les falta a algunas son los insumos. Este lee nada más esa hoja y
+// se niega si la obra ya tiene insumos capturados, para no encimar nada.
+document.getElementById('btn-importar-insumos').addEventListener('click', () => {
+  const msg = document.getElementById('insumos-msg');
+  msg.className = 'modal-msg'; msg.textContent = '';
+  document.getElementById('file-insumos').value = '';
+  document.getElementById('file-insumos').click();
+});
+
+document.getElementById('file-insumos').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  const msg = document.getElementById('insumos-msg');
+  if (!file || !currentObra) return;
+  const obraId = currentObra.obra_id;
+  msg.className = 'modal-msg'; msg.textContent = 'Leyendo el archivo…';
+  try {
+    const buf = await file.arrayBuffer();
+    const workbook = XLSX.read(buf, { type: 'array', cellDates: true });
+    const hoja = workbook.SheetNames.find(n => n.trim().toUpperCase() === 'GENERADORA DE INSUMOS');
+    if (!hoja){
+      msg.className = 'modal-msg err';
+      msg.textContent = 'El archivo no tiene la pestaña "GENERADORA DE INSUMOS".';
+      return;
+    }
+    const warnings = [];
+    const filas = XLSX.utils.sheet_to_json(workbook.Sheets[hoja], { header: 1, defval: null, raw: true });
+    const { items, ok } = parsearInsumos(filas, warnings);
+    if (!ok){
+      msg.className = 'modal-msg err';
+      msg.textContent = 'No se encontró el renglón de encabezados ("CLAVE") en esa pestaña.';
+      return;
+    }
+    if (!items.length){
+      msg.className = 'modal-msg err';
+      msg.textContent = 'La pestaña no trae ningún insumo con importe.';
+      return;
+    }
+
+    // no encimar: si ya hay insumos, se corrigen a mano con Editar, no reimportando
+    const { data: yaHay } = await sb.from('generadora_insumos').select('id').eq('obra_id', obraId).limit(1);
+    if ((yaHay || []).length){
+      msg.className = 'modal-msg err';
+      msg.textContent = 'Esta obra ya tiene insumos capturados. Para no encimar información, corrige los renglones con el botón Editar en vez de volver a importar.';
+      return;
+    }
+
+    const total = items.reduce((a, i) => a + (Number(i.importe) || 0), 0);
+    if (!confirm(`Se van a cargar ${items.length} insumos por ${fmtMoney(total)} a "${currentObra.nombre}".\n\nEse monto pasa a ser el costo directo presupuestado de la obra. ¿Continuar?`)){
+      msg.textContent = ''; return;
+    }
+
+    msg.textContent = 'Guardando…';
+    const { error } = await sb.from('generadora_insumos').insert(items.map(i => ({
+      obra_id: obraId, clave: i.clave, insumo: i.insumo, tipo: i.tipo, unidad: i.unidad,
+      cantidad: i.cantidad, costo_unitario: i.costo_unitario, importe: i.importe,
+    })));
+    if (error){
+      msg.className = 'modal-msg err'; msg.textContent = 'Error al guardar: ' + error.message;
+      return;
+    }
+    msg.className = 'modal-msg ok';
+    msg.textContent = `${items.length} insumos cargados por ${fmtMoney(total)}.`;
+    logActividad('importar_insumos', `${items.length} insumos, ${fmtMoney(total)} (${file.name})`, obraId, currentObra.nombre);
+    tabsLoaded['insumos'] = false; loadTab('insumos');
+    refrescarObraActual();
+  } catch (err) {
+    msg.className = 'modal-msg err'; msg.textContent = 'No se pudo leer el archivo: ' + err.message;
+  }
+});
 
 async function loadOdoo(){
   renderClaveOdoo();
