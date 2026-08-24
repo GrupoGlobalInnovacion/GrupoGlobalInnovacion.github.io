@@ -709,6 +709,30 @@
     border-radius:14px; padding:20px 24px; margin:22px 0; font-size:15.5px; line-height:1.65;
   }
 
+  /* semáforo de la tarjeta de utilidad proyectada: tiñe el recuadro entero, no solo el número */
+  .kpi.kpi-sem{position:relative; transition:border-color .25s var(--ease), background .25s var(--ease);}
+  .kpi.kpi-sem .value{transition:color .25s var(--ease);}
+  .kpi.kpi-sem::before{content:''; position:absolute; inset:0 0 auto 0; height:2px;
+    border-radius:14px 14px 0 0; opacity:.9;}
+
+  .kpi.sem-ok{border-color:rgba(34,197,94,.34);
+    background:linear-gradient(180deg, rgba(34,197,94,.10), rgba(34,197,94,.02));}
+  .kpi.sem-ok::before{background:var(--ok);}
+  .kpi.sem-ok .value{color:var(--ok);}
+  .kpi.sem-ok .kpi-sub b{color:var(--ok);}
+
+  .kpi.sem-precaucion{border-color:rgba(245,185,66,.38);
+    background:linear-gradient(180deg, rgba(245,185,66,.10), rgba(245,185,66,.02));}
+  .kpi.sem-precaucion::before{background:var(--warn);}
+  .kpi.sem-precaucion .value{color:var(--warn);}
+  .kpi.sem-precaucion .kpi-sub b{color:var(--warn);}
+
+  .kpi.sem-alerta{border-color:rgba(239,68,68,.40);
+    background:linear-gradient(180deg, rgba(239,68,68,.11), rgba(239,68,68,.02));}
+  .kpi.sem-alerta::before{background:var(--alert);}
+  .kpi.sem-alerta .value{color:var(--alert);}
+  .kpi.sem-alerta .kpi-sub b{color:var(--alert);}
+
   .kpi .kpi-sub{display:block; font-size:12.5px; color:var(--muted); font-weight:400;
     margin-top:6px; letter-spacing:0; line-height:1.45;}
   .kpi-comision-card .muted-val{color:var(--muted);}
@@ -3906,7 +3930,24 @@ function buildDetailKpisHtml(r){
   //   en cuánto la gané  →  cuánto me cuesta  →  cuánto pago de comisión  →  cuánto debería ganar
   //   →  cuánto llevo gastado  →  cuánto me queda  →  cuánto voy a ganar de verdad  →  qué falta cobrar
   const sub = t => `<span class="kpi-sub">${t}</span>`;
-  const dif = Number(r.utilidad_proyectada || 0) - Number(r.utilidad_presupuestada || 0);
+  const proy = Number(r.utilidad_proyectada || 0);
+  const pres = Number(r.utilidad_presupuestada || 0);
+  const dif = proy - pres;
+
+  const nivelUtilidad = () => {
+    if (proy < 0) return 'alerta';                 // se está perdiendo dinero
+    if (pres <= 0) return dif >= 0 ? 'ok' : 'alerta';  // sin base positiva, el % no dice nada
+    const desvio = dif / pres;                     // negativo = va por debajo
+    if (desvio >= -0.03) return 'ok';
+    if (desvio >= -0.08) return 'precaucion';
+    return 'alerta';
+  };
+  const nivel = nivelUtilidad();
+  const textoNivel = {
+    ok: 'Va como se planeó o mejor',
+    precaucion: 'Va por debajo — hay que cuidarla',
+    alerta: proy < 0 ? 'La obra va a perder dinero' : 'Muy por debajo de lo presupuestado',
+  }[nivel];
 
   const items = [
     {key:null, html:tarjeta('', 'Estatus', `<span class="badge ${r.estatus}">${r.estatus}</span>`, null)},
@@ -3936,13 +3977,13 @@ function buildDetailKpisHtml(r){
         `<span class="${r.disponible_vs_presupuesto<0?'alert':'ok'}">${fmtMoney(r.disponible_vs_presupuesto)}</span>${sub('Lo que queda por gastar sin salirse')}`,
         'odoo', 'Ver el detalle de lo gastado')},
 
-    {key:'kpi-utilproy', html:tarjeta('', 'Utilidad proyectada',
-        `<span class="${r.utilidad_proyectada < r.utilidad_presupuestada*0.5 ? 'alert':'ok'}">${fmtMoney(r.utilidad_proyectada)}</span>${sub(
+    {key:'kpi-utilproy', html:tarjeta(`kpi-sem sem-${nivel}`, 'Utilidad proyectada',
+        `${fmtMoney(proy)}${sub(
           Math.abs(dif) < 1
-            ? 'Va igual que lo presupuestado'
+            ? `Va igual que lo presupuestado · ${textoNivel}`
             : (dif > 0
-                ? `Va <b class="val-pos">${fmtMoney(dif)} por arriba</b> de lo presupuestado`
-                : `Va <b class="val-neg">${fmtMoney(Math.abs(dif))} por debajo</b> de lo presupuestado`))}`,
+                ? `Va <b>${fmtMoney(dif)} por arriba</b> de lo presupuestado`
+                : `Va <b>${fmtMoney(Math.abs(dif))} por debajo</b> de lo presupuestado`))}`,
         'insumos', 'Ver costo real vs presupuesto')},
 
     {key:'kpi-pendiente', html:tarjeta('', 'Pendiente de cobro',
