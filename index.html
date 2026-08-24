@@ -38,6 +38,10 @@
   @keyframes fadeInUp{ from{ opacity:0; transform:translateY(10px); } to{ opacity:1; transform:translateY(0); } }
   .fade-in{ animation:fadeInUp .38s var(--ease) both; }
 
+  /* el aro de foco solo aparece navegando con teclado, y en el color de la casa */
+  :focus{ outline:none; }
+  :focus-visible{ outline:2px solid rgba(255,137,117,.8); outline-offset:2px; border-radius:8px; }
+
   .kpis > *, .grid > *, #detail-screen section.block, .obs-table, .toptab-panel > .narrativa{
     animation:fadeInUp .5s var(--ease) both;
   }
@@ -364,7 +368,7 @@
   .trend-vacio-msg .tv-titulo{font-size:14.5px; font-weight:500; color:var(--muted);}
   .trend-vacio-msg .tv-sub{font-size:13.5px; color:var(--muted); opacity:.75; max-width:420px; line-height:1.4;}
   .trend-tip{
-    position:absolute; pointer-events:none; opacity:0; transform:translate(-50%,-120%);
+    position:absolute; pointer-events:none; opacity:0; transform:translate(-50%,-100%);
     background:rgba(20,20,20,.96); border:1px solid var(--border); border-radius:10px;
     padding:8px 11px; font-size:13px; white-space:nowrap; z-index:5;
     box-shadow:0 10px 30px rgba(0,0,0,.55); transition:opacity .15s var(--ease);
@@ -700,7 +704,24 @@
     border-radius:14px; padding:20px 24px; margin:22px 0; font-size:15.5px; line-height:1.65;
   }
 
+  .btn-editar-fila{background:rgba(255,255,255,.05); border:1px solid var(--border); color:var(--muted);
+    border-radius:7px; padding:3px 10px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;
+    transition:border-color .18s var(--ease), color .18s var(--ease), background .18s var(--ease);}
+  .btn-editar-fila:hover{border-color:rgba(255,137,117,.55); color:#ffb9a8; background:rgba(255,137,117,.08);}
+  td.col-editar{text-align:right; width:1%; white-space:nowrap;}
+  tr.fila-no-cuenta{opacity:.5;}
+  tr.fila-no-cuenta td{text-decoration:line-through; text-decoration-color:rgba(255,255,255,.35);}
+  tr.fila-no-cuenta td.col-editar{text-decoration:none; opacity:1;}
   .obs-table td.obs-obra{font-weight:500; font-size:15px;}
+  /* tabla de 6 columnas: en pantallas angostas se desliza en vez de apretarse y desalinearse */
+  .tabla-ancha{overflow-x:auto; -webkit-overflow-scrolling:touch;}
+  .obs-table.vistazo{min-width:820px;}
+  .obs-table.vistazo th, .obs-table.vistazo td{white-space:nowrap; vertical-align:middle;}
+  .obs-table.vistazo td.obs-obra{white-space:normal; min-width:210px;}
+  .obs-table.vistazo td.celda-estatus{white-space:nowrap;}
+  /* el contrato viene como un texto largo con fechas: se le pone tope y se ve completo al pasar el cursor */
+  .obs-table.vistazo td.celda-contrato{max-width:340px; overflow:hidden; text-overflow:ellipsis;}
+  .obs-table.vistazo .badge{vertical-align:middle;}
   .section-title{font-size:15px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin:28px 0 10px; font-weight:500;}
   .section-title:first-of-type{margin-top:0;}
   .obs-table td.obs-texto{color:var(--muted); font-size:14.5px; line-height:1.5;}
@@ -1095,7 +1116,16 @@
         </div>
 
         <div id="tab-cobranza" class="tab-panel hidden" data-feature="dtab-cobranza">
-          <div class="desc">Cobros registrados para esta obra (de GLOBAL - Cobranza Consolidada).</div>
+          <div class="desc">Cobros registrados para esta obra. Aquí va lo que <b>el cliente nos ha pagado</b> — no confundir con la pestaña de Costo Directo, que es lo que nosotros gastamos.</div>
+          <form class="report" id="form-cobranza">
+            <div class="field"><label>Contrato</label><input id="cob-contrato" type="text" placeholder="—"></div>
+            <div class="field"><label>Fecha</label><input id="cob-fecha" type="date"></div>
+            <div class="field"><label>Importe</label><input id="cob-importe" type="number" step="any" required placeholder="0.00"></div>
+            <div class="field"><label>Acumulado pagado</label><input id="cob-acumulado" type="number" step="any" placeholder="0.00"></div>
+            <div class="field"><label>Saldo</label><input id="cob-saldo" type="number" step="any" placeholder="0.00"></div>
+            <button type="submit" id="btn-cobranza">Agregar cobro</button>
+          </form>
+          <div id="cobranza-msg"></div>
           <div id="cobranza-wrap"></div>
         </div>
       </section>
@@ -1169,6 +1199,19 @@
       <div class="actions">
         <button class="secondary" id="btn-modcontrato-cancelar">Cancelar</button>
         <button class="primary" id="btn-modcontrato-guardar">Guardar modificación</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-editar-fila" class="modal-overlay hidden">
+    <div class="modal-box">
+      <h3 id="ef-titulo">Editar</h3>
+      <div class="desc" id="ef-desc"></div>
+      <div id="ef-campos"></div>
+      <div class="modal-msg" id="ef-msg"></div>
+      <div class="actions">
+        <button class="secondary" id="btn-ef-cancelar">Cancelar</button>
+        <button class="primary" id="btn-ef-guardar">Guardar cambios</button>
       </div>
     </div>
   </div>
@@ -1778,8 +1821,17 @@ function renderTrendChart(containerId, series, opts){
       filas += `<div class="t-row"><span class="trend-legend-dot" style="background:${series[si].color}"></span>${esc(series[si].label)}: ${esc(String(fmt(p.v)))}</div>`;
     });
     tip.innerHTML = `<div class="t-fecha">${esc(fecha)}</div>${filas}`;
-    tip.style.left = xPx + 'px';
-    tip.style.top = (yFor(limpias[0][Math.min(i, limpias[0].length-1)].v) / h) * caja.height + 'px';
+
+    // El tooltip se dibujaba siempre arriba del punto: cuando el punto está en lo alto de
+    // la gráfica se salía del recuadro y se encimaba con el título. Ahora se voltea hacia
+    // abajo si no cabe arriba, y se recorta a los lados para no salirse tampoco de ancho.
+    const yPx = (yFor(limpias[0][Math.min(i, limpias[0].length-1)].v) / h) * caja.height;
+    const tw = tip.offsetWidth, th = tip.offsetHeight;
+    const cabeArriba = yPx - th - 12 >= 0;
+    const izq = Math.max(tw / 2 + 4, Math.min(caja.width - tw / 2 - 4, xPx));
+    tip.style.left = izq + 'px';
+    tip.style.top = (cabeArriba ? yPx - 12 : yPx + 12) + 'px';
+    tip.style.transform = cabeArriba ? 'translate(-50%,-100%)' : 'translate(-50%,0)';
     wrap.classList.add('activo');
   });
   wrap.addEventListener('mouseleave', () => wrap.classList.remove('activo'));
@@ -2070,18 +2122,18 @@ function renderResumenEjecutivo(rows){
   // con datos descriptivos (cliente, contrato) además del semáforo.)
   if (vistazoWrap){
     const todas = rows.slice().sort((a,b) => esc(a.nombre).localeCompare(esc(b.nombre)));
-    let html2 = `<table class="obs-table"><thead><tr><th>Obra</th><th>Cliente</th><th>Contrato</th><th>Estatus</th><th>% construido</th><th>% cobrado</th></tr></thead><tbody>`;
+    let html2 = `<div class="tabla-ancha"><table class="obs-table vistazo"><thead><tr><th>Obra</th><th>Cliente</th><th>Contrato</th><th>Estatus</th><th>% construido</th><th>% cobrado</th></tr></thead><tbody>`;
     for (const r of todas){
       html2 += `<tr>
         <td class="obs-obra">${esc(r.nombre)}</td>
         <td>${esc(r.cliente||'—')}</td>
-        <td>${esc(r.contrato||'—')}</td>
+        <td class="celda-contrato" title="${esc(r.contrato||'')}">${esc(r.contrato||'—')}</td>
         <td class="celda-estatus"><span class="badge ${r.estatus}">${esc(r.estatus)}</span>${extraBadges(r)}</td>
         <td>${fmtPct(r.pct_ya_construido)}</td>
         <td>${fmtPct(r.pct_cobrado)}</td>
       </tr>`;
     }
-    html2 += '</tbody></table>';
+    html2 += '</tbody></table></div>';
     vistazoWrap.innerHTML = html2;
   }
 }
@@ -4081,6 +4133,187 @@ async function renderClaveOdoo(){
   });
 }
 
+document.getElementById('form-cobranza').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!currentObra) return;
+  const btn = document.getElementById('btn-cobranza');
+  const msg = document.getElementById('cobranza-msg');
+  const num = id => { const v = document.getElementById(id).value.trim(); return v === '' ? null : Number(v); };
+  const importe = num('cob-importe');
+  if (importe === null || isNaN(importe)){
+    msg.className = 'err'; msg.textContent = 'Captura el importe.'; return;
+  }
+  btn.disabled = true; msg.className = ''; msg.textContent = 'Guardando…';
+  const { error } = await sb.from('cobranza').insert({
+    obra_id: currentObra.obra_id,
+    contrato: document.getElementById('cob-contrato').value.trim() || null,
+    fecha: document.getElementById('cob-fecha').value || null,
+    importe,
+    acumulado_pagado: num('cob-acumulado'),
+    saldo: num('cob-saldo'),
+  });
+  btn.disabled = false;
+  if (error){ msg.className = 'err'; msg.textContent = 'Error al guardar: ' + error.message; return; }
+  msg.className = 'ok'; msg.textContent = 'Cobro agregado.';
+  logActividad('cobranza', `${fmtMoney(importe)}`, currentObra.obra_id, currentObra.nombre);
+  document.getElementById('form-cobranza').reset();
+  tabsLoaded['cobranza'] = false; loadTab('cobranza');
+  refrescarObraActual();
+});
+
+// ---------- EDITOR GENÉRICO DE RENGLONES ----------
+// Corregir un dato mal capturado era imposible desde el tablero: solo se podía agregar.
+// En vez de una pantalla por tabla, este editor recibe qué tabla y qué columnas se pueden
+// tocar. La lista de columnas es una lista blanca: nunca se arma el update con lo que
+// venga del formulario, solo con las columnas declaradas aquí.
+let edicionActual = null;
+
+// Editar un renglón cambia el costo, el precio de venta o el cobro, y eso vive en la vista
+// v_panel_control — hay que releerla para que los indicadores de arriba dejen de mentir.
+// La vista no trae `estado` ni `obra_created_at`: se conservan a mano (ver notas del frontend).
+async function refrescarObraActual(){
+  if (!currentObra) return;
+  const { data: fresh } = await sb.from('v_panel_control').select('*').eq('obra_id', currentObra.obra_id).maybeSingle();
+  if (!fresh) return;
+  fresh.estado = currentObra.estado;
+  fresh.obra_created_at = currentObra.obra_created_at;
+  currentObra = fresh;
+  const cont = document.getElementById('detail-kpis');
+  if (cont){ cont.innerHTML = buildDetailKpisHtml(fresh); conectarKpisDetalle(); }
+  renderAvisoComision(fresh);
+}
+
+const EDITABLES = {
+  costo_directo_odoo: {
+    titulo: 'Editar gasto',
+    desc: 'Corrige una orden mal capturada. Si resultó duplicada, ponle "No" en «¿Cuenta en el costo?»: el movimiento se conserva pero deja de sumar.',
+    recargar: () => { tabsLoaded['odoo'] = false; loadTab('odoo'); refrescarObraActual(); },
+    campos: [
+      {col:'fecha_gasto', label:'Fecha del gasto', tipo:'date'},
+      {col:'proveedor', label:'Proveedor', tipo:'text'},
+      {col:'comprador', label:'Comprador', tipo:'text'},
+      {col:'rubro', label:'Rubro', tipo:'text'},
+      {col:'referencia_orden', label:'Referencia de orden', tipo:'text'},
+      {col:'total_pagado', label:'Total gastado', tipo:'number'},
+      {col:'considerar_en_costo', label:'¿Cuenta en el costo?', tipo:'bool'},
+    ],
+  },
+  cobranza: {
+    titulo: 'Editar cobranza',
+    desc: 'Los cobros del cliente para esta obra.',
+    recargar: () => { tabsLoaded['cobranza'] = false; loadTab('cobranza'); refrescarObraActual(); },
+    campos: [
+      {col:'contrato', label:'Contrato', tipo:'text'},
+      {col:'fecha', label:'Fecha', tipo:'date'},
+      {col:'importe', label:'Importe', tipo:'number'},
+      {col:'acumulado_pagado', label:'Acumulado pagado', tipo:'number'},
+      {col:'siguiente_pago', label:'Siguiente pago', tipo:'number'},
+      {col:'saldo', label:'Saldo', tipo:'number'},
+      {col:'retenciones_acumuladas', label:'Retenciones acumuladas', tipo:'number'},
+    ],
+  },
+  presupuesto_ganador: {
+    titulo: 'Editar concepto del presupuesto',
+    desc: 'Corrige un concepto o captura una adenda. El importe manda: es lo que suma al precio de venta de la obra.',
+    recargar: () => { tabsLoaded['ganador'] = false; loadTab('ganador'); refrescarObraActual(); },
+    campos: [
+      {col:'clave', label:'Clave', tipo:'text'},
+      {col:'concepto', label:'Concepto', tipo:'text'},
+      {col:'unidad', label:'Unidad', tipo:'text'},
+      {col:'cantidad', label:'Cantidad', tipo:'number'},
+      {col:'precio_unitario', label:'Precio unitario', tipo:'number'},
+      {col:'importe', label:'Importe', tipo:'number'},
+    ],
+  },
+  generadora_insumos: {
+    titulo: 'Editar insumo',
+    desc: 'El importe manda: la suma de todos los importes es el costo directo presupuestado de la obra.',
+    recargar: () => { tabsLoaded['insumos'] = false; loadTab('insumos'); refrescarObraActual(); },
+    campos: [
+      {col:'clave', label:'Clave', tipo:'text'},
+      {col:'insumo', label:'Insumo', tipo:'text'},
+      {col:'tipo', label:'Tipo', tipo:'text'},
+      {col:'unidad', label:'Unidad', tipo:'text'},
+      {col:'cantidad', label:'Cantidad', tipo:'number'},
+      {col:'costo_unitario', label:'Costo unitario', tipo:'number'},
+      {col:'importe', label:'Importe', tipo:'number'},
+    ],
+  },
+};
+
+function puedeEditarFilas(){
+  return ['gerencia','costos_presupuestos','administracion','supervision'].includes(currentRole);
+}
+
+function btnEditar(tabla, id){
+  if (!puedeEditarFilas()) return '';
+  return `<button class="btn-editar-fila" data-tabla="${esc(tabla)}" data-id="${esc(String(id))}" title="Editar">Editar</button>`;
+}
+
+function abrirEditorFila(tabla, fila){
+  const cfg = EDITABLES[tabla];
+  if (!cfg) return;
+  edicionActual = { tabla, id: fila.id, cfg };
+  document.getElementById('ef-titulo').textContent = cfg.titulo;
+  document.getElementById('ef-desc').textContent = cfg.desc;
+  document.getElementById('ef-msg').textContent = '';
+  document.getElementById('ef-campos').innerHTML = cfg.campos.map(c => {
+    const v = fila[c.col];
+    if (c.tipo === 'bool'){
+      return `<div class="field"><label for="ef-${c.col}">${esc(c.label)}</label>
+        <select id="ef-${c.col}"><option value="true"${v !== false ? ' selected' : ''}>Sí</option>
+        <option value="false"${v === false ? ' selected' : ''}>No</option></select></div>`;
+    }
+    const tipo = c.tipo === 'number' ? 'number' : (c.tipo === 'date' ? 'date' : 'text');
+    const paso = c.tipo === 'number' ? ' step="any"' : '';
+    return `<div class="field"><label for="ef-${c.col}">${esc(c.label)}</label>
+      <input type="${tipo}"${paso} id="ef-${c.col}" value="${esc(v === null || v === undefined ? '' : String(v))}"></div>`;
+  }).join('');
+  openModal('modal-editar-fila');
+}
+
+document.getElementById('btn-ef-cancelar').addEventListener('click', () => closeModal('modal-editar-fila'));
+
+document.getElementById('btn-ef-guardar').addEventListener('click', async () => {
+  if (!edicionActual) return;
+  const { tabla, id, cfg } = edicionActual;
+  const msg = document.getElementById('ef-msg');
+  const btn = document.getElementById('btn-ef-guardar');
+  const cambios = {};
+  for (const c of cfg.campos){
+    const el = document.getElementById('ef-' + c.col);
+    if (!el) continue;
+    if (c.tipo === 'bool'){ cambios[c.col] = el.value === 'true'; continue; }
+    const txt = el.value.trim();
+    if (c.tipo === 'number'){
+      if (txt === ''){ cambios[c.col] = null; continue; }
+      const n = Number(txt);
+      if (isNaN(n)){ msg.className = 'modal-msg err'; msg.textContent = `"${c.label}" no es un número válido.`; return; }
+      cambios[c.col] = n;
+    } else {
+      cambios[c.col] = txt === '' ? null : txt;
+    }
+  }
+  btn.disabled = true; msg.className = 'modal-msg'; msg.textContent = 'Guardando…';
+  const { error } = await sb.from(tabla).update(cambios).eq('id', id);
+  btn.disabled = false;
+  if (error){ msg.className = 'modal-msg err'; msg.textContent = 'Error al guardar: ' + error.message; return; }
+  logActividad('editar_fila', `${cfg.titulo} — ${tabla} #${id}`, currentObra && currentObra.obra_id, currentObra && currentObra.nombre);
+  closeModal('modal-editar-fila');
+  edicionActual = null;
+  cfg.recargar();
+});
+
+// un solo escucha para toda la pantalla: los botones se pintan y repintan todo el tiempo
+document.addEventListener('click', async (e) => {
+  const b = e.target.closest('.btn-editar-fila');
+  if (!b) return;
+  const tabla = b.dataset.tabla, id = b.dataset.id;
+  const { data, error } = await sb.from(tabla).select('*').eq('id', id).maybeSingle();
+  if (error || !data){ alert('No se pudo abrir el renglón: ' + (error ? error.message : 'no se encontró')); return; }
+  abrirEditorFila(tabla, data);
+});
+
 function tableHtml(headers, rows, rowFn, emptyMsg){
   if (!rows.length) return `<div class="empty">${emptyMsg}</div>`;
   let html = '<table><thead><tr>' + headers.map(h => `<th${h.num?' class="num"':''}>${h.label}</th>`).join('') + '</tr></thead><tbody>';
@@ -4095,11 +4328,11 @@ async function loadGanador(){
   const { data, error } = await sb.from('presupuesto_ganador').select('*').eq('obra_id', currentObra.obra_id).order('clave');
   if (error){ wrap.innerHTML = '<div class="empty">Error: ' + error.message + '</div>'; return; }
   wrap.innerHTML = tableHtml(
-    [{label:'Clave'},{label:'Concepto'},{label:'Unidad'},{label:'Cantidad',num:true},{label:'Precio unitario',num:true},{label:'Importe',num:true}],
+    [{label:'Clave'},{label:'Concepto'},{label:'Unidad'},{label:'Cantidad',num:true},{label:'Precio unitario',num:true},{label:'Importe',num:true},{label:''}],
     data,
     c => `<tr><td>${esc(c.clave||'')}</td><td>${esc(c.concepto||'')}</td><td>${esc(c.unidad||'')}</td>
       <td class="num">${Number(c.cantidad||0).toLocaleString('es-MX',{maximumFractionDigits:2})}</td>
-      <td class="num">${fmtMoney(c.precio_unitario)}</td><td class="num">${fmtMoney(c.importe)}</td></tr>`,
+      <td class="num">${fmtMoney(c.precio_unitario)}</td><td class="num">${fmtMoney(c.importe)}</td><td class="col-editar">${btnEditar('presupuesto_ganador', c.id)}</td></tr>`,
     'Sin conceptos capturados.'
   );
 }
@@ -4115,11 +4348,11 @@ async function loadInsumos(){
     return;
   }
   wrap.innerHTML = tableHtml(
-    [{label:'Clave'},{label:'Insumo'},{label:'Tipo'},{label:'Unidad'},{label:'Cantidad',num:true},{label:'Costo unitario',num:true},{label:'Importe',num:true}],
+    [{label:'Clave'},{label:'Insumo'},{label:'Tipo'},{label:'Unidad'},{label:'Cantidad',num:true},{label:'Costo unitario',num:true},{label:'Importe',num:true},{label:''}],
     data,
     c => `<tr><td>${esc(c.clave||'')}</td><td>${esc(c.insumo||'')}</td><td>${esc(c.tipo||'')}</td><td>${esc(c.unidad||'')}</td>
       <td class="num">${Number(c.cantidad||0).toLocaleString('es-MX',{maximumFractionDigits:2})}</td>
-      <td class="num">${fmtMoney(c.costo_unitario)}</td><td class="num">${fmtMoney(c.importe)}</td></tr>`,
+      <td class="num">${fmtMoney(c.costo_unitario)}</td><td class="num">${fmtMoney(c.importe)}</td><td class="col-editar">${btnEditar('generadora_insumos', c.id)}</td></tr>`,
     'Sin insumos capturados.'
   );
 }
@@ -4139,10 +4372,10 @@ async function loadOdoo(){
     return Number(b.id || 0) - Number(a.id || 0);
   });
   wrap.innerHTML = tableHtml(
-    [{label:'Fecha'},{label:'Comprador'},{label:'Proveedor'},{label:'Rubro'},{label:'Referencia'},{label:'Total gastado',num:true},{label:'¿Cuenta?'}],
+    [{label:'Fecha'},{label:'Comprador'},{label:'Proveedor'},{label:'Rubro'},{label:'Referencia'},{label:'Total gastado',num:true},{label:'¿Cuenta?'},{label:''}],
     ordenados,
-    c => `<tr><td>${esc(fechaDe(c) || '—')}</td><td>${esc(c.comprador||'')}</td><td>${esc(c.proveedor||'')}</td><td>${esc(c.rubro||'')}</td>
-      <td>${esc(c.referencia_orden||'')}</td><td class="num">${fmtMoney(c.total_pagado)}</td><td>${c.considerar_en_costo ? 'Sí' : 'No'}</td></tr>`,
+    c => `<tr${c.considerar_en_costo === false ? ' class="fila-no-cuenta"' : ''}><td>${esc(fechaDe(c) || '—')}</td><td>${esc(c.comprador||'')}</td><td>${esc(c.proveedor||'')}</td><td>${esc(c.rubro||'')}</td>
+      <td>${esc(c.referencia_orden||'')}</td><td class="num">${fmtMoney(c.total_pagado)}</td><td>${c.considerar_en_costo === false ? 'No' : 'Sí'}</td><td class="col-editar">${btnEditar('costo_directo_odoo', c.id)}</td></tr>`,
     'Sin pagos registrados.'
   );
 }
@@ -4170,10 +4403,10 @@ async function loadCobranza(){
   const { data, error } = await sb.from('cobranza').select('*').eq('obra_id', currentObra.obra_id).order('fecha', {ascending:false});
   if (error){ wrap.innerHTML = '<div class="empty">Error: ' + error.message + '</div>'; return; }
   wrap.innerHTML = tableHtml(
-    [{label:'Contrato'},{label:'Importe',num:true},{label:'Acumulado pagado',num:true},{label:'Siguiente pago',num:true},{label:'Saldo',num:true},{label:'Retenciones',num:true}],
+    [{label:'Contrato'},{label:'Fecha'},{label:'Importe',num:true},{label:'Acumulado pagado',num:true},{label:'Siguiente pago',num:true},{label:'Saldo',num:true},{label:'Retenciones',num:true},{label:''}],
     data,
-    c => `<tr><td>${esc(c.contrato||'')}</td><td class="num">${fmtMoney(c.importe)}</td><td class="num">${fmtMoney(c.acumulado_pagado)}</td>
-      <td class="num">${fmtMoney(c.siguiente_pago)}</td><td class="num">${fmtMoney(c.saldo)}</td><td class="num">${fmtMoney(c.retenciones_acumuladas)}</td></tr>`,
+    c => `<tr><td>${esc(c.contrato||'')}</td><td>${esc(c.fecha||'—')}</td><td class="num">${fmtMoney(c.importe)}</td><td class="num">${fmtMoney(c.acumulado_pagado)}</td>
+      <td class="num">${fmtMoney(c.siguiente_pago)}</td><td class="num">${fmtMoney(c.saldo)}</td><td class="num">${fmtMoney(c.retenciones_acumuladas)}</td><td class="col-editar">${btnEditar('cobranza', c.id)}</td></tr>`,
     'Sin registros de cobranza vinculados a esta obra.'
   );
 }
