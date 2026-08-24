@@ -709,8 +709,8 @@
     border-radius:14px; padding:20px 24px; margin:22px 0; font-size:15.5px; line-height:1.65;
   }
 
-  .kpi-comision-card .kpi-sub{display:block; font-size:12.5px; color:var(--muted); font-weight:400;
-    margin-top:5px; letter-spacing:0;}
+  .kpi .kpi-sub{display:block; font-size:12.5px; color:var(--muted); font-weight:400;
+    margin-top:6px; letter-spacing:0; line-height:1.45;}
   .kpi-comision-card .muted-val{color:var(--muted);}
   .btn-comision{margin-top:12px; background:rgba(255,137,117,.10); border:1px solid rgba(255,137,117,.32);
     color:#ffb9a8; border-radius:8px; padding:5px 12px; font-size:12.5px; font-weight:600; cursor:pointer;
@@ -1391,17 +1391,17 @@ const ROLE_FEATURES = {
   gerencia: ['tab-resumen','tab-todas','tab-equilibrio','tab-supervision','tab-actividad','nueva-obra','archivar',
     'dtab-ganador','dtab-insumos','dtab-odoo','dtab-cobranza','dtab-ingresos',
     'avance-form','avance-tabla','kpi-costo','kpi-odoo','kpi-disponible','kpi-utilpres','kpi-utilproy','kpi-pendiente',
-    'bar-construido','bar-gastado','bar-cobrado','importar-gastos-odoo','modificar-contrato','kpi-comision'],
+    'bar-construido','bar-gastado','bar-cobrado','importar-gastos-odoo','modificar-contrato','kpi-comision','kpi-venta'],
   costos_presupuestos: ['tab-todas','nueva-obra','archivar',
     'dtab-ganador','dtab-insumos',
-    'avance-tabla','kpi-costo','kpi-utilpres','bar-construido','modificar-contrato'],
+    'avance-tabla','kpi-costo','kpi-utilpres','bar-construido','modificar-contrato','kpi-venta'],
   administracion: ['tab-todas','tab-equilibrio',
     'dtab-odoo','dtab-ingresos',
     'kpi-odoo','importar-gastos-odoo'],
   supervision: ['tab-resumen','tab-todas','tab-equilibrio','tab-supervision','archivar',
     'dtab-ganador','dtab-insumos','dtab-odoo','dtab-cobranza','dtab-ingresos','modificar-contrato',
     'avance-form','avance-tabla','kpi-costo','kpi-odoo','kpi-disponible','kpi-utilpres','kpi-utilproy','kpi-pendiente',
-    'bar-construido','bar-gastado','bar-cobrado','kpi-comision'],
+    'bar-construido','bar-gastado','bar-cobrado','kpi-comision','kpi-venta'],
 };
 const ROLE_LABELS = {
   gerencia:'Gerencia', costos_presupuestos:'Costos y Presupuestos',
@@ -3902,21 +3902,52 @@ function buildDetailKpisHtml(r){
     </div>`;
   };
 
+  // El orden cuenta la historia de la obra, en el mismo orden en que se piensa:
+  //   en cuánto la gané  →  cuánto me cuesta  →  cuánto pago de comisión  →  cuánto debería ganar
+  //   →  cuánto llevo gastado  →  cuánto me queda  →  cuánto voy a ganar de verdad  →  qué falta cobrar
+  const sub = t => `<span class="kpi-sub">${t}</span>`;
+  const dif = Number(r.utilidad_proyectada || 0) - Number(r.utilidad_presupuestada || 0);
+
   const items = [
     {key:null, html:tarjeta('', 'Estatus', `<span class="badge ${r.estatus}">${r.estatus}</span>`, null)},
-    {key:'kpi-costo', html:tarjeta('acc-costo', 'Costo directo presupuestado', fmtMoney(r.costo_directo_presupuestado), 'insumos', 'Ver la Generadora de Insumos')},
-    {key:'kpi-odoo', html:tarjeta('acc-costo', 'Gastado en la obra (Odoo)', fmtMoney(r.total_pagado_odoo), 'odoo', 'Ver los gastos registrados')},
-    {key:'kpi-disponible', html:tarjeta('', 'Disponible vs presupuesto', `<span class="${r.disponible_vs_presupuesto<0?'alert':'ok'}">${fmtMoney(r.disponible_vs_presupuesto)}</span>`, 'odoo', 'Ver el detalle de lo gastado')},
-    {key:'kpi-utilpres', html:tarjeta('acc-utilidad',
-        // se nombra la comisión en la etiqueta cuando aplica, para que se entienda por qué
-        // la utilidad es menor que venta − costo (dato que varía por contrato: 20%, 22%…)
-        (Number(r.comision_obra_publica || 0) > 0 && roleAllows('kpi-comision'))
-          ? `Utilidad presupuestada <span style="opacity:.65;">(ya menos comisión de ${fmtMoney(r.comision_obra_publica)})</span>`
-          : 'Utilidad presupuestada',
-        fmtMoney(r.utilidad_presupuestada), 'ganador', 'Ver el Presupuesto Ganador')},
-    {key:'kpi-utilproy', html:tarjeta('', 'Utilidad proyectada', `<span class="${r.utilidad_proyectada < r.utilidad_presupuestada*0.5 ? 'alert':'ok'}">${fmtMoney(r.utilidad_proyectada)}</span>`, 'insumos', 'Ver costo real vs presupuesto')},
-    {key:'kpi-pendiente', html:tarjeta('', 'Pendiente de cobro', fmtMoney(r.pendiente_de_cobro), 'cobranza', 'Ver la cobranza de esta obra')},
+
+    {key:'kpi-venta', html:tarjeta('', 'Precio de venta (presupuesto ganador)',
+        `${fmtMoney(r.precio_venta_sin_iva)}${sub('Sin IVA — en cuánto se ganó la obra')}`,
+        'ganador', 'Ver el Presupuesto Ganador')},
+
+    {key:'kpi-costo', html:tarjeta('acc-costo', 'Costo directo presupuestado',
+        `${fmtMoney(r.costo_directo_presupuestado)}${sub('Lo que se planeó gastar en construirla')}`,
+        'insumos', 'Ver la Generadora de Insumos')},
+
     {key:'kpi-comision', html:tarjetaComision(r)},
+
+    {key:'kpi-utilpres', html:tarjeta('acc-utilidad', 'Utilidad presupuestada',
+        `${fmtMoney(r.utilidad_presupuestada)}${sub(
+          (Number(r.comision_obra_publica || 0) > 0 && roleAllows('kpi-comision'))
+            ? 'Venta − costo − comisión. Lo que se planeó ganar'
+            : 'Venta − costo. Lo que se planeó ganar')}`,
+        'ganador', 'Ver el Presupuesto Ganador')},
+
+    {key:'kpi-odoo', html:tarjeta('acc-costo', 'Gastado en la obra (Odoo)',
+        `${fmtMoney(r.total_pagado_odoo)}${sub('Lo que de verdad se lleva gastado')}`,
+        'odoo', 'Ver los gastos registrados')},
+
+    {key:'kpi-disponible', html:tarjeta('', 'Disponible vs presupuesto',
+        `<span class="${r.disponible_vs_presupuesto<0?'alert':'ok'}">${fmtMoney(r.disponible_vs_presupuesto)}</span>${sub('Lo que queda por gastar sin salirse')}`,
+        'odoo', 'Ver el detalle de lo gastado')},
+
+    {key:'kpi-utilproy', html:tarjeta('', 'Utilidad proyectada',
+        `<span class="${r.utilidad_proyectada < r.utilidad_presupuestada*0.5 ? 'alert':'ok'}">${fmtMoney(r.utilidad_proyectada)}</span>${sub(
+          Math.abs(dif) < 1
+            ? 'Va igual que lo presupuestado'
+            : (dif > 0
+                ? `Va <b class="val-pos">${fmtMoney(dif)} por arriba</b> de lo presupuestado`
+                : `Va <b class="val-neg">${fmtMoney(Math.abs(dif))} por debajo</b> de lo presupuestado`))}`,
+        'insumos', 'Ver costo real vs presupuesto')},
+
+    {key:'kpi-pendiente', html:tarjeta('', 'Pendiente de cobro',
+        `${fmtMoney(r.pendiente_de_cobro)}${sub('Cobrar no es lo mismo que haber ganado')}`,
+        'cobranza', 'Ver la cobranza de esta obra')},
   ];
   return items.filter(it => !it.key || roleAllows(it.key)).map(it => it.html).join('');
 }
