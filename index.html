@@ -720,7 +720,8 @@
   .obs-table.vistazo td.obs-obra{white-space:normal; min-width:210px;}
   .obs-table.vistazo td.celda-estatus{white-space:nowrap;}
   /* el contrato viene como un texto largo con fechas: se le pone tope y se ve completo al pasar el cursor */
-  .obs-table.vistazo td.celda-contrato{max-width:340px; overflow:hidden; text-overflow:ellipsis;}
+  .obs-table.vistazo td.celda-contrato{max-width:340px;}
+  .obs-table.vistazo td.celda-contrato > span{display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .obs-table.vistazo .badge{vertical-align:middle;}
   .section-title{font-size:15px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin:28px 0 10px; font-weight:500;}
   .section-title:first-of-type{margin-top:0;}
@@ -2127,7 +2128,7 @@ function renderResumenEjecutivo(rows){
       html2 += `<tr>
         <td class="obs-obra">${esc(r.nombre)}</td>
         <td>${esc(r.cliente||'—')}</td>
-        <td class="celda-contrato" title="${esc(r.contrato||'')}">${esc(r.contrato||'—')}</td>
+        <td class="celda-contrato" title="${esc(r.contrato||'')}"><span>${esc(r.contrato||'—')}</span></td>
         <td class="celda-estatus"><span class="badge ${r.estatus}">${esc(r.estatus)}</span>${extraBadges(r)}</td>
         <td>${fmtPct(r.pct_ya_construido)}</td>
         <td>${fmtPct(r.pct_cobrado)}</td>
