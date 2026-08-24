@@ -282,6 +282,10 @@
     background:rgba(255,255,255,.05); border:1px solid var(--border); color:var(--text);
   }
   .badge::before{content:''; width:6px; height:6px; border-radius:50%; background:currentColor; flex-shrink:0;}
+  .badge.grande{font-size:20px; font-weight:600; padding:10px 26px; letter-spacing:.02em;}
+  .badge.grande::before{width:10px; height:10px;}
+  /* la tarjeta de estatus no lleva número: el semáforo se centra para que llene el espacio */
+  .kpi.kpi-estatus .value{display:flex; align-items:center; justify-content:center; min-height:86px; margin-top:4px;}
   .badge.OK{color:var(--ok);}
   .badge.PRECAUCIÓN{color:var(--warn);}
   .badge.ALERTA{color:var(--alert);}
@@ -4010,6 +4014,9 @@ function buildDetailKpisHtml(r){
     return 'alerta';
   };
   const nivel = nivelUtilidad();
+  // El paso intermedio de la cuenta: lo que deja la obra antes de descontar la comisión.
+  const utilBruta = Number(r.precio_venta_sin_iva || 0) - Number(r.costo_directo_presupuestado || 0);
+  const brutaPos = utilBruta >= 0;
   const textoNivel = {
     ok: 'Va como se planeó o mejor',
     precaucion: 'Va por debajo — hay que cuidarla',
@@ -4017,14 +4024,16 @@ function buildDetailKpisHtml(r){
   }[nivel];
 
   const items = [
-    {key:null, html:tarjeta('', 'Estatus', `<span class="badge ${r.estatus}">${r.estatus}</span>`, null)},
+    {key:null, html:tarjeta('kpi-estatus', 'Estatus', `<span class="badge grande ${r.estatus}">${r.estatus}</span>`, null)},
 
     {key:'kpi-venta', html:tarjeta('', 'Precio de venta (presupuesto ganador)',
         `${fmtMoney(r.precio_venta_sin_iva)}${sub('Sin IVA — en cuánto se ganó la obra')}`,
         'ganador', 'Ver el Presupuesto Ganador')},
 
     {key:'kpi-costo', html:tarjeta('acc-costo', 'Costo directo presupuestado',
-        `${fmtMoney(r.costo_directo_presupuestado)}${sub('Lo que se planeó gastar en construirla')}`,
+        `${fmtMoney(r.costo_directo_presupuestado)}${sub(
+          `Lo que se planeó gastar en construirla<br><b class="${brutaPos ? 'val-pos' : 'val-neg'}">Venta − costo = ${fmtMoney(utilBruta)}</b>${
+            roleAllows('kpi-comision') && Number(r.comision_obra_publica || 0) > 0 ? ' <span style="opacity:.8;">antes de comisión</span>' : ''}`)}`,
         'insumos', 'Ver la Generadora de Insumos')},
 
     {key:'kpi-comision', html:tarjetaComision(r)},
