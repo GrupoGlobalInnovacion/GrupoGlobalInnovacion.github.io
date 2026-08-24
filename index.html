@@ -1585,6 +1585,10 @@ async function loadRoleAndShowApp(user){
 function showApp(user){
   document.getElementById('login-screen').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
+  // El directorio se cargaba SOLO al pintar la pantalla de login. Quien ya trae sesión abierta
+  // se la salta, así que directorioList quedaba vacío y los botones de @mención no aparecían
+  // (renderMentionButtons pintaba una lista de cero elementos, sin ruido). Se carga también aquí.
+  cargarDirectorioSiHaceFalta();
   document.getElementById('user-email').textContent = currentNombre || user.email;
   applyRoleUI();
   loadConcentrado().then(setDefaultTopTab);
@@ -4982,6 +4986,13 @@ document.getElementById('form-report').addEventListener('submit', async (e) => {
 });
 
 // ---------- COMENTARIOS Y PENDIENTES (por obra, con @menciones) ----------
+async function cargarDirectorioSiHaceFalta(){
+  if (directorioList.length) { renderMentionButtons(); return; }
+  const { data } = await sb.from('directorio_acceso').select('nombre,email,puesto,orden').eq('activo', true).order('orden');
+  if (data && data.length) directorioList = data;
+  renderMentionButtons();
+}
+
 function renderMentionButtons(){
   const wrap = document.getElementById('mention-buttons');
   if (!wrap) return;
