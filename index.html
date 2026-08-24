@@ -371,12 +371,17 @@
     position:absolute; pointer-events:none; opacity:0; transform:translate(-50%,-100%);
     background:rgba(20,20,20,.96); border:1px solid var(--border); border-radius:10px;
     padding:8px 11px; font-size:13px; white-space:nowrap; z-index:5;
-    box-shadow:0 10px 30px rgba(0,0,0,.55); transition:opacity .15s var(--ease);
+    box-shadow:0 10px 30px rgba(0,0,0,.55);
+    /* además de aparecer, se desliza: si solo cambia de posición de golpe se siente brusco */
+    transition:opacity .15s var(--ease), left .16s var(--ease), top .16s var(--ease), transform .16s var(--ease);
   }
   .trend-wrap.activo .trend-tip{opacity:1;}
   .trend-tip .t-fecha{color:var(--muted); font-size:12px; margin-bottom:3px;}
   .trend-tip .t-row{display:flex; align-items:center; gap:6px; font-weight:500;}
   .trend-guide{opacity:0; transition:opacity .15s var(--ease);}
+  /* las propiedades de geometría de SVG sí se pueden animar: la línea y los puntos se deslizan */
+  .trend-guide .g-linea{transition:x1 .16s var(--ease), x2 .16s var(--ease);}
+  .trend-guide .g-punto{transition:cx .16s var(--ease), cy .16s var(--ease), r .16s var(--ease);}
   .trend-wrap.activo .trend-guide{opacity:1;}
   .trend-footer{display:flex; justify-content:space-between; font-size:12px; color:var(--muted); margin-top:2px;}
   .trend-legend{display:flex; flex-wrap:wrap; gap:14px; margin-top:8px; font-size:13px; color:var(--text);}
@@ -704,6 +709,13 @@
     border-radius:14px; padding:20px 24px; margin:22px 0; font-size:15.5px; line-height:1.65;
   }
 
+  .kpi-comision-card .kpi-sub{display:block; font-size:12.5px; color:var(--muted); font-weight:400;
+    margin-top:5px; letter-spacing:0;}
+  .kpi-comision-card .muted-val{color:var(--muted);}
+  .btn-comision{margin-top:12px; background:rgba(255,137,117,.10); border:1px solid rgba(255,137,117,.32);
+    color:#ffb9a8; border-radius:8px; padding:5px 12px; font-size:12.5px; font-weight:600; cursor:pointer;
+    transition:border-color .18s var(--ease), background .18s var(--ease);}
+  .btn-comision:hover{border-color:rgba(255,137,117,.65); background:rgba(255,137,117,.18);}
   .btn-editar-fila{background:rgba(255,255,255,.05); border:1px solid var(--border); color:var(--muted);
     border-radius:7px; padding:3px 10px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;
     transition:border-color .18s var(--ease), color .18s var(--ease), background .18s var(--ease);}
@@ -1379,17 +1391,17 @@ const ROLE_FEATURES = {
   gerencia: ['tab-resumen','tab-todas','tab-equilibrio','tab-supervision','tab-actividad','nueva-obra','archivar',
     'dtab-ganador','dtab-insumos','dtab-odoo','dtab-cobranza','dtab-ingresos',
     'avance-form','avance-tabla','kpi-costo','kpi-odoo','kpi-disponible','kpi-utilpres','kpi-utilproy','kpi-pendiente',
-    'bar-construido','bar-gastado','bar-cobrado','importar-gastos-odoo','modificar-contrato'],
+    'bar-construido','bar-gastado','bar-cobrado','importar-gastos-odoo','modificar-contrato','kpi-comision'],
   costos_presupuestos: ['tab-todas','nueva-obra','archivar',
     'dtab-ganador','dtab-insumos',
-    'avance-tabla','kpi-costo','kpi-utilpres','bar-construido','modificar-contrato'],
+    'avance-tabla','kpi-costo','kpi-utilpres','bar-construido','modificar-contrato','kpi-comision'],
   administracion: ['tab-todas','tab-equilibrio',
     'dtab-odoo','dtab-ingresos',
     'kpi-odoo','importar-gastos-odoo'],
   supervision: ['tab-resumen','tab-todas','tab-equilibrio','tab-supervision','archivar',
     'dtab-ganador','dtab-insumos','dtab-odoo','dtab-cobranza','dtab-ingresos','modificar-contrato',
     'avance-form','avance-tabla','kpi-costo','kpi-odoo','kpi-disponible','kpi-utilpres','kpi-utilproy','kpi-pendiente',
-    'bar-construido','bar-gastado','bar-cobrado'],
+    'bar-construido','bar-gastado','bar-cobrado','kpi-comision'],
 };
 const ROLE_LABELS = {
   gerencia:'Gerencia', costos_presupuestos:'Costos y Presupuestos',
@@ -3844,13 +3856,8 @@ async function renderAvisoComision(r){
   }
   if (!data.comision_aplica) return;   // obra privada: no lleva comisión, no hay nada que avisar
   const pct = Number(data.comision_pct || 0);
-  if (pct > 0){
-    cont.innerHTML = `<div class="data-gap-banner" style="background:rgba(255,255,255,.04); border-color:rgba(255,255,255,.09);">
-      Obra pública con <b>${(pct * 100).toLocaleString('es-MX', {maximumFractionDigits:2})}% de comisión</b>
-      sobre el subtotal del presupuesto ganador (${fmtMoney(r.precio_venta_sin_iva)}) =
-      <b>${fmtMoney(r.comision_obra_publica)}</b>. Ya está descontada de la utilidad presupuestada y de la proyectada.</div>`;
-    return;
-  }
+  // con el porcentaje capturado ya lo dice la tarjeta de Comisión; aquí solo se avisa lo que falta
+  if (pct > 0){ cont.innerHTML = ''; return; }
   cont.innerHTML = `<div class="data-gap-banner"><b>Falta capturar el % de comisión de esta obra.</b>
     Está marcada como obra pública, pero no tiene porcentaje. Mientras esté vacío el tablero lo toma
     como cero, así que <b>la utilidad que ves aquí sale más alta de lo real</b>.
@@ -3871,6 +3878,27 @@ function buildDetailKpisHtml(r){
       ${tab ? `<div class="kpi-foot"><div class="kpi-ir">${irTexto} →</div></div>` : ''}
     </div>`;
   };
+  // La comisión vive en `obras`, no en la vista, pero la vista sí trae el monto ya calculado
+  // (comision_obra_publica). El porcentaje se deduce de ahí para poder mostrarlo y editarlo
+  // sin una consulta extra. Si la obra es privada el monto es 0 y se muestra "No aplica".
+  const tarjetaComision = (r) => {
+    const monto = Number(r.comision_obra_publica || 0);
+    const venta = Number(r.precio_venta_sin_iva || 0);
+    const pct = (monto > 0 && venta > 0) ? (monto / venta) * 100 : 0;
+    const puedeEditar = ['gerencia','costos_presupuestos','supervision'].includes(currentRole);
+    const boton = puedeEditar
+      ? `<button type="button" class="btn-comision" id="btn-editar-comision">${monto > 0 ? 'Cambiar %' : 'Capturar comisión'}</button>`
+      : '';
+    const valor = monto > 0
+      ? `${fmtMoney(monto)}<span class="kpi-sub">${pct.toFixed(pct % 1 ? 2 : 0)}% sobre ${fmtMoney(venta)}</span>`
+      : `<span class="muted-val">No aplica</span><span class="kpi-sub">Obra privada, o falta capturar el porcentaje</span>`;
+    return `<div class="kpi acc-utilidad kpi-comision-card">
+      <div class="kpi-head"><div class="label">Comisión de la obra</div></div>
+      <div class="value">${valor}</div>
+      ${boton}
+    </div>`;
+  };
+
   const items = [
     {key:null, html:tarjeta('', 'Estatus', `<span class="badge ${r.estatus}">${r.estatus}</span>`, null)},
     {key:'kpi-costo', html:tarjeta('acc-costo', 'Costo directo presupuestado', fmtMoney(r.costo_directo_presupuestado), 'insumos', 'Ver la Generadora de Insumos')},
@@ -3885,6 +3913,7 @@ function buildDetailKpisHtml(r){
         fmtMoney(r.utilidad_presupuestada), 'ganador', 'Ver el Presupuesto Ganador')},
     {key:'kpi-utilproy', html:tarjeta('', 'Utilidad proyectada', `<span class="${r.utilidad_proyectada < r.utilidad_presupuestada*0.5 ? 'alert':'ok'}">${fmtMoney(r.utilidad_proyectada)}</span>`, 'insumos', 'Ver costo real vs presupuesto')},
     {key:'kpi-pendiente', html:tarjeta('', 'Pendiente de cobro', fmtMoney(r.pendiente_de_cobro), 'cobranza', 'Ver la cobranza de esta obra')},
+    {key:'kpi-comision', html:tarjetaComision(r)},
   ];
   return items.filter(it => !it.key || roleAllows(it.key)).map(it => it.html).join('');
 }
@@ -3945,6 +3974,14 @@ async function renderRitmoObra(r){
 // Conecta los KPIs del detalle con su pestaña de origen. Se llama cada vez que se
 // (re)dibujan los KPIs, porque innerHTML borra los listeners anteriores.
 function conectarKpisDetalle(){
+  const bc = document.getElementById('btn-editar-comision');
+  if (bc){
+    bc.addEventListener('click', async () => {
+      const { data, error } = await sb.from('obras').select('id,comision_aplica,comision_pct').eq('id', currentObra.obra_id).maybeSingle();
+      if (error || !data){ alert('No se pudo abrir: ' + (error ? error.message : 'obra no encontrada')); return; }
+      abrirEditorFila('obras', data);
+    });
+  }
   document.querySelectorAll('#detail-kpis .kpi-link').forEach(el => {
     el.addEventListener('click', () => {
       const tab = el.dataset.tab;
@@ -4185,6 +4222,15 @@ async function refrescarObraActual(){
 }
 
 const EDITABLES = {
+  obras: {
+    titulo: 'Comisión de la obra',
+    desc: 'Solo la obra pública paga comisión. Se calcula sobre el subtotal del presupuesto ganador (sin IVA) por el porcentaje acordado, que cambia de contrato a contrato: 15%, 20%, 25%… Al guardar, la utilidad se recalcula sola.',
+    recargar: () => { refrescarObraActual(); },
+    campos: [
+      {col:'comision_aplica', label:'¿Es obra pública? (paga comisión)', tipo:'bool'},
+      {col:'comision_pct', label:'% de comisión acordado', tipo:'pct'},
+    ],
+  },
   costo_directo_odoo: {
     titulo: 'Editar gasto',
     desc: 'Corrige una orden mal capturada. Si resultó duplicada, ponle "No" en «¿Cuenta en el costo?»: el movimiento se conserva pero deja de sumar.',
@@ -4265,6 +4311,12 @@ function abrirEditorFila(tabla, fila){
         <select id="ef-${c.col}"><option value="true"${v !== false ? ' selected' : ''}>Sí</option>
         <option value="false"${v === false ? ' selected' : ''}>No</option></select></div>`;
     }
+    if (c.tipo === 'pct'){
+      // en la base vive como fracción (0.2); aquí se captura como porcentaje (20)
+      const mostrado = (v === null || v === undefined || v === '') ? '' : (Number(v) * 100);
+      return `<div class="field"><label for="ef-${c.col}">${esc(c.label)}</label>
+        <input type="number" step="any" min="0" max="100" id="ef-${c.col}" value="${esc(String(mostrado))}" placeholder="Ej. 20"></div>`;
+    }
     const tipo = c.tipo === 'number' ? 'number' : (c.tipo === 'date' ? 'date' : 'text');
     const paso = c.tipo === 'number' ? ' step="any"' : '';
     return `<div class="field"><label for="ef-${c.col}">${esc(c.label)}</label>
@@ -4286,6 +4338,13 @@ document.getElementById('btn-ef-guardar').addEventListener('click', async () => 
     if (!el) continue;
     if (c.tipo === 'bool'){ cambios[c.col] = el.value === 'true'; continue; }
     const txt = el.value.trim();
+    if (c.tipo === 'pct'){
+      if (txt === ''){ cambios[c.col] = null; continue; }
+      const n = Number(txt);
+      if (isNaN(n) || n < 0 || n > 100){ msg.className = 'modal-msg err'; msg.textContent = `"${c.label}" debe ser un porcentaje entre 0 y 100.`; return; }
+      cambios[c.col] = n / 100;
+      continue;
+    }
     if (c.tipo === 'number'){
       if (txt === ''){ cambios[c.col] = null; continue; }
       const n = Number(txt);
