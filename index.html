@@ -744,6 +744,16 @@
     color:#ffb9a8; border-radius:8px; padding:5px 12px; font-size:12.5px; font-weight:600; cursor:pointer;
     transition:border-color .18s var(--ease), background .18s var(--ease);}
   .btn-comision:hover{border-color:rgba(255,137,117,.65); background:rgba(255,137,117,.18);}
+  .fila-acciones{display:flex; justify-content:flex-end; margin:4px 0 -6px;}
+  .btn-agregar-fila{background:rgba(255,137,117,.10); border:1px solid rgba(255,137,117,.32);
+    color:#ffb9a8; border-radius:8px; padding:6px 14px; font-size:13px; font-weight:600; cursor:pointer;
+    transition:border-color .18s var(--ease), background .18s var(--ease);}
+  .btn-agregar-fila:hover{border-color:rgba(255,137,117,.65); background:rgba(255,137,117,.18);}
+  .th-orden{background:none; border:none; padding:0; margin:0; cursor:pointer; font:inherit;
+    color:inherit; text-transform:inherit; letter-spacing:inherit; text-align:inherit;
+    transition:color .18s var(--ease);}
+  .th-orden:hover{color:var(--text);}
+  .th-orden.activo{color:#ffb9a8;}
   .btn-editar-fila{background:rgba(255,255,255,.05); border:1px solid var(--border); color:var(--muted);
     border-radius:7px; padding:3px 10px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;
     transition:border-color .18s var(--ease), color .18s var(--ease), background .18s var(--ease);}
@@ -4375,6 +4385,7 @@ async function refrescarObraActual(){
 const EDITABLES = {
   obras: {
     titulo: 'Comisión de la obra',
+    tituloNuevo: 'Comisión de la obra',
     desc: 'Solo la obra pública paga comisión. Se calcula sobre el subtotal del presupuesto ganador (sin IVA) por el porcentaje acordado, que cambia de contrato a contrato: 15%, 20%, 25%… Al guardar, la utilidad se recalcula sola.',
     recargar: () => { refrescarObraActual(); },
     campos: [
@@ -4384,6 +4395,7 @@ const EDITABLES = {
   },
   costo_directo_odoo: {
     titulo: 'Editar gasto',
+    tituloNuevo: 'Nuevo gasto',
     desc: 'Corrige una orden mal capturada. Si resultó duplicada, ponle "No" en «¿Cuenta en el costo?»: el movimiento se conserva pero deja de sumar.',
     recargar: () => { tabsLoaded['odoo'] = false; loadTab('odoo'); refrescarObraActual(); },
     campos: [
@@ -4398,6 +4410,7 @@ const EDITABLES = {
   },
   cobranza: {
     titulo: 'Editar cobranza',
+    tituloNuevo: 'Nuevo cobro',
     desc: 'Los cobros del cliente para esta obra.',
     recargar: () => { tabsLoaded['cobranza'] = false; loadTab('cobranza'); refrescarObraActual(); },
     campos: [
@@ -4412,6 +4425,7 @@ const EDITABLES = {
   },
   presupuesto_ganador: {
     titulo: 'Editar concepto del presupuesto',
+    tituloNuevo: 'Nuevo concepto del presupuesto',
     desc: 'Corrige un concepto o captura una adenda. El importe manda: es lo que suma al precio de venta de la obra.',
     recargar: () => { tabsLoaded['ganador'] = false; loadTab('ganador'); refrescarObraActual(); },
     campos: [
@@ -4425,6 +4439,7 @@ const EDITABLES = {
   },
   generadora_insumos: {
     titulo: 'Editar insumo',
+    tituloNuevo: 'Nuevo insumo',
     desc: 'El importe manda: la suma de todos los importes es el costo directo presupuestado de la obra.',
     recargar: () => { tabsLoaded['insumos'] = false; loadTab('insumos'); refrescarObraActual(); },
     campos: [
@@ -4451,8 +4466,10 @@ function btnEditar(tabla, id){
 function abrirEditorFila(tabla, fila){
   const cfg = EDITABLES[tabla];
   if (!cfg) return;
-  edicionActual = { tabla, id: fila.id, cfg };
-  document.getElementById('ef-titulo').textContent = cfg.titulo;
+  const esNuevo = !fila || fila.id === undefined || fila.id === null;
+  fila = fila || {};
+  edicionActual = { tabla, id: esNuevo ? null : fila.id, cfg };
+  document.getElementById('ef-titulo').textContent = esNuevo ? (cfg.tituloNuevo || cfg.titulo) : cfg.titulo;
   document.getElementById('ef-desc').textContent = cfg.desc;
   document.getElementById('ef-msg').textContent = '';
   document.getElementById('ef-campos').innerHTML = cfg.campos.map(c => {
@@ -4473,8 +4490,21 @@ function abrirEditorFila(tabla, fila){
     return `<div class="field"><label for="ef-${c.col}">${esc(c.label)}</label>
       <input type="${tipo}"${paso} id="ef-${c.col}" value="${esc(v === null || v === undefined ? '' : String(v))}"></div>`;
   }).join('');
+  document.getElementById('btn-ef-guardar').textContent = esNuevo ? 'Agregar' : 'Guardar cambios';
   openModal('modal-editar-fila');
 }
+
+// botón de alta arriba de cada tabla que lo admita
+function btnAgregar(tabla, texto){
+  if (!puedeEditarFilas() || !EDITABLES[tabla]) return '';
+  return `<div class="fila-acciones"><button class="btn-agregar-fila" data-tabla="${esc(tabla)}">+ ${esc(texto)}</button></div>`;
+}
+
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('.btn-agregar-fila');
+  if (!b) return;
+  abrirEditorFila(b.dataset.tabla, null);
+});
 
 document.getElementById('btn-ef-cancelar').addEventListener('click', () => closeModal('modal-editar-fila'));
 
@@ -4506,10 +4536,19 @@ document.getElementById('btn-ef-guardar').addEventListener('click', async () => 
     }
   }
   btn.disabled = true; msg.className = 'modal-msg'; msg.textContent = 'Guardando…';
-  const { error } = await sb.from(tabla).update(cambios).eq('id', id);
+  let error;
+  if (id === null){
+    // renglón nuevo: siempre se cuelga de la obra abierta, nunca de una que venga del formulario
+    cambios.obra_id = currentObra ? currentObra.obra_id : null;
+    ({ error } = await sb.from(tabla).insert(cambios));
+  } else {
+    ({ error } = await sb.from(tabla).update(cambios).eq('id', id));
+  }
   btn.disabled = false;
   if (error){ msg.className = 'modal-msg err'; msg.textContent = 'Error al guardar: ' + error.message; return; }
-  logActividad('editar_fila', `${cfg.titulo} — ${tabla} #${id}`, currentObra && currentObra.obra_id, currentObra && currentObra.nombre);
+  logActividad(id === null ? 'agregar_fila' : 'editar_fila',
+    `${cfg.titulo} — ${tabla}${id === null ? ' (nuevo)' : ' #' + id}`,
+    currentObra && currentObra.obra_id, currentObra && currentObra.nombre);
   closeModal('modal-editar-fila');
   edicionActual = null;
   cfg.recargar();
@@ -4544,8 +4583,9 @@ async function loadGanador(){
     c => `<tr><td>${esc(c.clave||'')}</td><td>${esc(c.concepto||'')}</td><td>${esc(c.unidad||'')}</td>
       <td class="num">${Number(c.cantidad||0).toLocaleString('es-MX',{maximumFractionDigits:2})}</td>
       <td class="num">${fmtMoney(c.precio_unitario)}</td><td class="num">${fmtMoney(c.importe)}</td><td class="col-editar">${btnEditar('presupuesto_ganador', c.id)}</td></tr>`,
-    'Sin conceptos capturados.'
+    'Sin conceptos capturados. Usa el botón de arriba para capturarlos uno por uno.'
   );
+  wrap.innerHTML = btnAgregar('presupuesto_ganador', 'Agregar concepto') + wrap.innerHTML;
 }
 
 async function loadInsumos(){
@@ -4564,8 +4604,9 @@ async function loadInsumos(){
     c => `<tr><td>${esc(c.clave||'')}</td><td>${esc(c.insumo||'')}</td><td>${esc(c.tipo||'')}</td><td>${esc(c.unidad||'')}</td>
       <td class="num">${Number(c.cantidad||0).toLocaleString('es-MX',{maximumFractionDigits:2})}</td>
       <td class="num">${fmtMoney(c.costo_unitario)}</td><td class="num">${fmtMoney(c.importe)}</td><td class="col-editar">${btnEditar('generadora_insumos', c.id)}</td></tr>`,
-    'Sin insumos capturados.'
+    'Sin insumos capturados. Usa el botón de arriba para capturarlos uno por uno.'
   );
+  wrap.innerHTML = btnAgregar('generadora_insumos', 'Agregar insumo') + wrap.innerHTML;
 }
 
 async function loadOdoo(){
@@ -4574,21 +4615,59 @@ async function loadOdoo(){
   wrap.innerHTML = '<div class="loading">Cargando…</div>';
   const { data, error } = await sb.from('costo_directo_odoo').select('*').eq('obra_id', currentObra.obra_id);
   if (error){ wrap.innerHTML = '<div class="empty">Error: ' + error.message + '</div>'; return; }
-  // lo más reciente primero, y sin fecha hasta abajo
   const fechaDe = c => c.fecha_gasto || c.fecha_limite_orden || '';
-  const ordenados = (data || []).slice().sort((a, b) => {
-    const fa = fechaDe(a), fb = fechaDe(b);
-    if (fa && fb && fa !== fb) return fb.localeCompare(fa);
-    if (fa !== fb) return fa ? -1 : 1;
-    return Number(b.id || 0) - Number(a.id || 0);
+  odooFilas = data || [];
+  renderTablaOdoo();
+}
+
+// Orden de la tabla de gastos. Por omisión, lo más reciente primero; se cambia con un clic
+// en el encabezado y se puede agrupar visualmente por referencia, que es lo que pidió la Arq.
+let odooFilas = [];
+let odooOrden = { col: 'fecha', desc: true };
+
+function renderTablaOdoo(){
+  const wrap = document.getElementById('odoo-wrap');
+  if (!wrap) return;
+  const fechaDe = c => c.fecha_gasto || c.fecha_limite_orden || '';
+  const valor = (c, col) => ({
+    fecha: fechaDe(c),
+    comprador: (c.comprador || '').toUpperCase(),
+    proveedor: (c.proveedor || '').toUpperCase(),
+    rubro: (c.rubro || '').toUpperCase(),
+    referencia: (c.referencia_orden || '').toUpperCase(),
+    total: Number(c.total_pagado || 0),
+  })[col];
+
+  const { col, desc } = odooOrden;
+  const ordenados = odooFilas.slice().sort((a, b) => {
+    const va = valor(a, col), vb = valor(b, col);
+    if (va === vb) return Number(b.id || 0) - Number(a.id || 0);
+    // los vacíos siempre hasta abajo, se ordene como se ordene
+    if (va === '' || va === null) return 1;
+    if (vb === '' || vb === null) return -1;
+    const cmp = (typeof va === 'number') ? (va - vb) : String(va).localeCompare(String(vb));
+    return desc ? -cmp : cmp;
   });
+
+  const th = (label, colId, num) => {
+    const act = odooOrden.col === colId;
+    const flecha = act ? (odooOrden.desc ? ' ↓' : ' ↑') : '';
+    return { label: `<button class="th-orden${act ? ' activo' : ''}" data-col="${colId}">${label}${flecha}</button>`, num };
+  };
+
   wrap.innerHTML = tableHtml(
-    [{label:'Fecha'},{label:'Comprador'},{label:'Proveedor'},{label:'Rubro'},{label:'Referencia'},{label:'Total gastado',num:true},{label:'¿Cuenta?'},{label:''}],
+    [th('Fecha','fecha'), th('Comprador','comprador'), th('Proveedor','proveedor'), th('Rubro','rubro'),
+     th('Referencia','referencia'), th('Total gastado','total',true), {label:'¿Cuenta?'}, {label:''}],
     ordenados,
     c => `<tr${c.considerar_en_costo === false ? ' class="fila-no-cuenta"' : ''}><td>${esc(fechaDe(c) || '—')}</td><td>${esc(c.comprador||'')}</td><td>${esc(c.proveedor||'')}</td><td>${esc(c.rubro||'')}</td>
       <td>${esc(c.referencia_orden||'')}</td><td class="num">${fmtMoney(c.total_pagado)}</td><td>${c.considerar_en_costo === false ? 'No' : 'Sí'}</td><td class="col-editar">${btnEditar('costo_directo_odoo', c.id)}</td></tr>`,
     'Sin pagos registrados.'
   );
+  wrap.querySelectorAll('.th-orden').forEach(b => b.addEventListener('click', () => {
+    const c = b.dataset.col;
+    odooOrden = { col: c, desc: odooOrden.col === c ? !odooOrden.desc : true };
+    renderTablaOdoo();
+  }));
 }
 
 async function loadIngresos(){
