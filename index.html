@@ -737,6 +737,15 @@
   .kpi.sem-alerta .value{color:var(--alert);}
   .kpi.sem-alerta .kpi-sub b{color:var(--alert);}
 
+  .barras-avance{display:block; margin:8px 0 6px;}
+  .barras-avance .ba{display:flex; align-items:center; gap:8px; margin-bottom:5px;}
+  .barras-avance .bal{width:66px; flex:none; font-size:11.5px; color:var(--muted);}
+  .barras-avance .bat{flex:1; height:6px; border-radius:99px; background:rgba(255,255,255,.07); overflow:hidden;}
+  .barras-avance .baf{display:block; height:100%; border-radius:99px;}
+  .barras-avance .baf.con{background:var(--ok);}
+  .barras-avance .baf.gas{background:var(--warn);}
+  .barras-avance .bav{width:52px; flex:none; text-align:right; font-size:11.5px;
+    font-variant-numeric:tabular-nums; color:var(--muted);}
   .kpi .kpi-sub{display:block; font-size:12.5px; color:var(--muted); font-weight:400;
     margin-top:6px; letter-spacing:0; line-height:1.45;}
   .kpi-comision-card .muted-val{color:var(--muted);}
@@ -1107,7 +1116,7 @@
         <div id="report-msg"></div>
       </section>
 
-      <section class="block" data-feature="avance-tabla">
+      <section class="block" id="bloque-avance" data-feature="avance-tabla">
         <h3>Avance por concepto</h3>
         <div id="conceptos-wrap"></div>
       </section>
@@ -1434,17 +1443,17 @@ const ROLE_FEATURES = {
   gerencia: ['tab-resumen','tab-todas','tab-equilibrio','tab-supervision','tab-actividad','nueva-obra','archivar',
     'dtab-ganador','dtab-insumos','dtab-odoo','dtab-cobranza','dtab-ingresos',
     'avance-form','avance-tabla','kpi-costo','kpi-odoo','kpi-disponible','kpi-utilpres','kpi-utilproy','kpi-pendiente',
-    'bar-construido','bar-gastado','bar-cobrado','importar-gastos-odoo','modificar-contrato','kpi-comision','kpi-venta'],
+    'bar-construido','bar-gastado','bar-cobrado','importar-gastos-odoo','modificar-contrato','kpi-comision','kpi-venta','kpi-avance'],
   costos_presupuestos: ['tab-todas','nueva-obra','archivar',
     'dtab-ganador','dtab-insumos',
-    'avance-tabla','kpi-costo','kpi-utilpres','bar-construido','modificar-contrato','kpi-venta'],
-  administracion: ['tab-todas','tab-equilibrio',
+    'avance-tabla','kpi-costo','kpi-utilpres','bar-construido','modificar-contrato','kpi-venta','kpi-avance'],
+  administracion: ['tab-todas','tab-equilibrio','kpi-avance',
     'dtab-odoo','dtab-ingresos',
     'kpi-odoo','importar-gastos-odoo'],
   supervision: ['tab-resumen','tab-todas','tab-equilibrio','tab-supervision','archivar',
     'dtab-ganador','dtab-insumos','dtab-odoo','dtab-cobranza','dtab-ingresos','modificar-contrato',
     'avance-form','avance-tabla','kpi-costo','kpi-odoo','kpi-disponible','kpi-utilpres','kpi-utilproy','kpi-pendiente',
-    'bar-construido','bar-gastado','bar-cobrado','kpi-comision','kpi-venta'],
+    'bar-construido','bar-gastado','bar-cobrado','kpi-comision','kpi-venta','kpi-avance'],
 };
 const ROLE_LABELS = {
   gerencia:'Gerencia', costos_presupuestos:'Costos y Presupuestos',
@@ -4033,6 +4042,14 @@ function buildDetailKpisHtml(r){
     return 'alerta';
   };
   const nivel = nivelUtilidad();
+
+  const pctCon = Number(r.pct_ya_construido || 0) * 100;
+  const pctGas = Number(r.pct_ya_gastado || 0) * 100;
+  const puntos = pctGas - pctCon;   // + = se gasta más rápido de lo que se construye
+  const nivelAvance = puntos <= 3 ? 'ok' : (puntos <= 8 ? 'precaucion' : 'alerta');
+  const textoAvance = puntos <= 0
+    ? `Se ha gastado ${Math.abs(puntos).toFixed(1)} puntos menos de lo construido`
+    : `Se ha gastado ${puntos.toFixed(1)} puntos más de lo construido`;
   // El paso intermedio de la cuenta: lo que deja la obra antes de descontar la comisión.
   const utilBruta = Number(r.precio_venta_sin_iva || 0) - Number(r.costo_directo_presupuestado || 0);
   const brutaPos = utilBruta >= 0;
@@ -4044,6 +4061,14 @@ function buildDetailKpisHtml(r){
 
   const items = [
     {key:null, html:tarjeta('kpi-estatus', 'Estatus', `<span class="badge grande ${r.estatus}">${r.estatus}</span>`, null)},
+
+    {key:'kpi-avance', html:tarjeta(`kpi-sem sem-${nivelAvance}`, 'Avance físico',
+        `${pctCon.toFixed(1)}%${sub(
+          `<span class="barras-avance">
+             <span class="ba"><span class="bal">construido</span><span class="bat"><span class="baf con" style="width:${Math.min(pctCon,100)}%"></span></span><span class="bav">${pctCon.toFixed(1)}%</span></span>
+             <span class="ba"><span class="bal">gastado</span><span class="bat"><span class="baf gas" style="width:${Math.min(pctGas,100)}%"></span></span><span class="bav">${pctGas.toFixed(1)}%</span></span>
+           </span><b>${textoAvance}</b>`)}`,
+        'avance', 'Ver el avance por concepto')},
 
     {key:'kpi-venta', html:tarjeta('', 'Precio de venta (presupuesto ganador)',
         `${fmtMoney(r.precio_venta_sin_iva)}${sub('Sin IVA — en cuánto se ganó la obra')}`,
@@ -4159,6 +4184,11 @@ function conectarKpisDetalle(){
       if (btn && !btn.classList.contains('hidden')){
         btn.click();
         btn.scrollIntoView({ behavior:'smooth', block:'center' });
+        return;
+      }
+      const bloque = document.getElementById('bloque-' + tab);
+      if (bloque && !bloque.classList.contains('hidden')){
+        bloque.scrollIntoView({ behavior:'smooth', block:'start' });
       }
     });
   });
