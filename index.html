@@ -1068,7 +1068,7 @@
           <div class="bar-label"><span>% cobrado <span style="opacity:.6;">— lo que el cliente nos ha pagado</span></span>
             <span class="bar-cifras"><span class="bar-pct" id="d-pct-cobrado"></span><span class="bar-monto" id="d-monto-cobrado"></span></span></div>
           <div class="bar-track"><div class="bar-fill construido" id="d-bar-cobrado"></div></div>
-          <div class="desc hidden" id="d-cobrado-nota" style="margin-top:6px;">% cobrado mayor a 100% normalmente corresponde al IVA u otros cobros adicionales sobre el contrato.</div>
+          <div class="desc hidden" id="d-cobrado-nota" style="margin-top:6px;">Se cobró más que el contrato con IVA — revisa la pestaña de Cobranza, puede ser una adenda o un renglón capturado de más.</div>
         </div>
         <div class="desc" style="margin-top:16px; padding-top:12px; border-top:1px solid var(--border);">
           <b>Nota:</b> que el % gastado vaya por debajo del % construido normalmente significa que la obra
@@ -4118,7 +4118,8 @@ function buildDetailKpisHtml(r){
         'insumos', 'Ver costo real vs presupuesto')},
 
     {key:'kpi-pendiente', html:tarjeta('', 'Pendiente de cobro',
-        `${fmtMoney(r.pendiente_de_cobro)}${sub('Cobrar no es lo mismo que haber ganado')}`,
+        `${fmtMoney(r.pendiente_de_cobro)}${sub(
+          `Se lleva cobrado <b>${fmtPct(r.pct_cobrado)}</b> del contrato con IVA (${fmtMoney(r.precio_venta_con_iva)})<br>Cobrar no es lo mismo que haber ganado`)}`,
         'cobranza', 'Ver la cobranza de esta obra')},
   ];
   return items.filter(it => !it.key || roleAllows(it.key)).map(it => it.html).join('');
