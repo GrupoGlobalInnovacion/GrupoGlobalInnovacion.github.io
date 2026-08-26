@@ -464,7 +464,8 @@
   .obra-rank-card.PRECAUCIÓN{border-left:3px solid var(--warn);}
   .obra-rank-card.OK{border-left:3px solid var(--ok);}
   .obra-rank-top{display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; flex-wrap:wrap; gap:10px;}
-  .obra-rank-top .nombre{font-weight:500; font-size:16px; letter-spacing:-.01em;}
+  .obra-rank-top{border-bottom:1px solid var(--border); padding-bottom:12px;}
+  .obra-rank-top .nombre{font-weight:650; font-size:20px; letter-spacing:-.015em; color:var(--text); line-height:1.25;}
   .obra-bar-row{display:flex; align-items:center; gap:16px; margin-bottom:14px; font-size:13.5px;}
   .obra-bar-row .obl{width:120px; color:var(--muted); flex-shrink:0; font-size:13.5px;}
   .obra-bar-track{flex:1; height:12px; background:var(--bg); border-radius:6px; overflow:hidden; border:1px solid var(--border);}
@@ -757,6 +758,9 @@
   .btn-agregar-fila{background:rgba(255,137,117,.10); border:1px solid rgba(255,137,117,.32);
     color:#ffb9a8; border-radius:8px; padding:6px 14px; font-size:13px; font-weight:600; cursor:pointer;
     transition:border-color .18s var(--ease), background .18s var(--ease);}
+  .modal-box .actions button.danger{background:rgba(239,68,68,.12); border:1px solid rgba(239,68,68,.4);
+    color:#ff9b9b; margin-right:auto;}
+  .modal-box .actions button.danger:hover{background:rgba(239,68,68,.22); border-color:rgba(239,68,68,.7);}
   .btn-agregar-fila:hover{border-color:rgba(255,137,117,.65); background:rgba(255,137,117,.18);}
   .th-orden{background:none; border:none; padding:0; margin:0; cursor:pointer; font:inherit;
     color:inherit; text-transform:inherit; letter-spacing:inherit; text-align:inherit;
@@ -1121,6 +1125,12 @@
         <div id="conceptos-wrap"></div>
       </section>
 
+      <section class="block" data-feature="avance-form">
+        <h3>Reportes de avance capturados</h3>
+        <div class="desc">Cada vez que alguien reporta avance queda un renglón aquí. Si se capturó mal una cantidad, corrígela o elimínala — el avance por concepto de arriba se recalcula solo.</div>
+        <div id="reportes-avance-wrap"></div>
+      </section>
+
       <section class="block">
         <div class="tabs" id="detail-tabs">
           <button class="tab-btn active" data-tab="ganador" data-feature="dtab-ganador">Presupuesto Ganador</button>
@@ -1275,6 +1285,7 @@
       <div id="ef-campos"></div>
       <div class="modal-msg" id="ef-msg"></div>
       <div class="actions">
+        <button class="danger hidden" id="btn-ef-borrar">Eliminar</button>
         <button class="secondary" id="btn-ef-cancelar">Cancelar</button>
         <button class="primary" id="btn-ef-guardar">Guardar cambios</button>
       </div>
@@ -1451,7 +1462,7 @@ const ROLE_FEATURES = {
     'dtab-odoo','dtab-ingresos',
     'kpi-odoo','importar-gastos-odoo'],
   supervision: ['tab-resumen','tab-todas','tab-equilibrio','tab-supervision','archivar',
-    'dtab-ganador','dtab-insumos','dtab-odoo','dtab-cobranza','dtab-ingresos','modificar-contrato',
+    'dtab-ganador','dtab-insumos','dtab-odoo','dtab-cobranza','dtab-ingresos','modificar-contrato','nueva-obra',
     'avance-form','avance-tabla','kpi-costo','kpi-odoo','kpi-disponible','kpi-utilpres','kpi-utilproy','kpi-pendiente',
     'bar-construido','bar-gastado','bar-cobrado','kpi-comision','kpi-venta','kpi-avance'],
 };
@@ -4296,6 +4307,7 @@ async function openDetail(r){
     return;
   }
   renderConceptos(conceptos);
+  loadReportesAvance();
   fillConceptoSelect(conceptos);
   loadGastoMensual(r.obra_id);
   loadComentarios(r.obra_id);
@@ -4425,6 +4437,26 @@ async function refrescarObraActual(){
 }
 
 const EDITABLES = {
+  avance_semanal: {
+    titulo: 'Reporte de avance',
+    tituloNuevo: 'Reporte de avance',
+    borrable: true,
+    desc: 'Corrige la cantidad construida que se reportó. El avance por concepto y el semáforo de la obra se recalculan al guardar.',
+    // corregir un avance cambia el % construido, que a su vez mueve la utilidad proyectada:
+    // hay que releer los conceptos y la obra, no solo la lista de reportes
+    recargar: async () => {
+      await loadReportesAvance();
+      await refrescarObraActual();
+      if (currentObra) await openDetail(currentObra);
+    },
+    campos: [
+      {col:'fecha_reporte', label:'Fecha del reporte', tipo:'date'},
+      {col:'concepto_clave', label:'Clave del concepto', tipo:'text'},
+      {col:'cantidad_construida', label:'Cantidad construida', tipo:'number'},
+      {col:'nombre_reporta', label:'Quién reportó', tipo:'text'},
+      {col:'observaciones', label:'Observaciones', tipo:'text'},
+    ],
+  },
   obras: {
     titulo: 'Comisión de la obra',
     tituloNuevo: 'Comisión de la obra',
@@ -4437,6 +4469,7 @@ const EDITABLES = {
   },
   costo_directo_odoo: {
     titulo: 'Editar gasto',
+    borrable: true,
     tituloNuevo: 'Nuevo gasto',
     desc: 'Corrige una orden mal capturada. Si resultó duplicada, ponle "No" en «¿Cuenta en el costo?»: el movimiento se conserva pero deja de sumar.',
     recargar: () => { tabsLoaded['odoo'] = false; loadTab('odoo'); refrescarObraActual(); },
@@ -4452,6 +4485,7 @@ const EDITABLES = {
   },
   cobranza: {
     titulo: 'Editar cobranza',
+    borrable: true,
     tituloNuevo: 'Nuevo cobro',
     desc: 'Los cobros del cliente para esta obra.',
     recargar: () => { tabsLoaded['cobranza'] = false; loadTab('cobranza'); refrescarObraActual(); },
@@ -4467,6 +4501,7 @@ const EDITABLES = {
   },
   presupuesto_ganador: {
     titulo: 'Editar concepto del presupuesto',
+    borrable: true,
     tituloNuevo: 'Nuevo concepto del presupuesto',
     desc: 'Corrige un concepto o captura una adenda. El importe manda: es lo que suma al precio de venta de la obra.',
     recargar: () => { tabsLoaded['ganador'] = false; loadTab('ganador'); refrescarObraActual(); },
@@ -4481,6 +4516,7 @@ const EDITABLES = {
   },
   generadora_insumos: {
     titulo: 'Editar insumo',
+    borrable: true,
     tituloNuevo: 'Nuevo insumo',
     desc: 'El importe manda: la suma de todos los importes es el costo directo presupuestado de la obra.',
     recargar: () => { tabsLoaded['insumos'] = false; loadTab('insumos'); refrescarObraActual(); },
@@ -4533,6 +4569,10 @@ function abrirEditorFila(tabla, fila){
       <input type="${tipo}"${paso} id="ef-${c.col}" value="${esc(v === null || v === undefined ? '' : String(v))}"></div>`;
   }).join('');
   document.getElementById('btn-ef-guardar').textContent = esNuevo ? 'Agregar' : 'Guardar cambios';
+  // Borrar solo donde tiene sentido: un renglón capturado por error. En obras no se borra
+  // desde aquí (para eso está Archivar), y en un renglón nuevo no hay nada que borrar.
+  const btnBorrar = document.getElementById('btn-ef-borrar');
+  btnBorrar.classList.toggle('hidden', esNuevo || !cfg.borrable);
   openModal('modal-editar-fila');
 }
 
@@ -4549,6 +4589,22 @@ document.addEventListener('click', (e) => {
 });
 
 document.getElementById('btn-ef-cancelar').addEventListener('click', () => closeModal('modal-editar-fila'));
+
+document.getElementById('btn-ef-borrar').addEventListener('click', async () => {
+  if (!edicionActual || edicionActual.id === null) return;
+  const { tabla, id, cfg } = edicionActual;
+  if (!confirm(`Se va a eliminar este renglón de forma permanente.\n\nSi solo quieres que deje de contar sin perder el rastro, cierra esto y ponle "No" en «¿Cuenta en el costo?».\n\n¿Eliminar de todas formas?`)) return;
+  const msg = document.getElementById('ef-msg');
+  const btn = document.getElementById('btn-ef-borrar');
+  btn.disabled = true; msg.className = 'modal-msg'; msg.textContent = 'Eliminando…';
+  const { error } = await sb.from(tabla).delete().eq('id', id);
+  btn.disabled = false;
+  if (error){ msg.className = 'modal-msg err'; msg.textContent = 'No se pudo eliminar: ' + error.message; return; }
+  logActividad('borrar_fila', `${cfg.titulo} — ${tabla} #${id}`, currentObra && currentObra.obra_id, currentObra && currentObra.nombre);
+  closeModal('modal-editar-fila');
+  edicionActual = null;
+  cfg.recargar();
+});
 
 document.getElementById('btn-ef-guardar').addEventListener('click', async () => {
   if (!edicionActual) return;
@@ -4636,11 +4692,14 @@ async function loadInsumos(){
   const { data, error } = await sb.from('generadora_insumos').select('*').eq('obra_id', currentObra.obra_id).order('clave');
   if (error){ wrap.innerHTML = '<div class="empty">Error: ' + error.message + '</div>'; return; }
   const conCosto = data.filter(r => Number(r.importe||0) > 0);
-  if (!conCosto.length){
-    wrap.innerHTML = '<div class="empty">Esta obra aún no tiene su explosión de insumos capturada (la plantilla está vacía en el archivo original). El costo directo presupuestado de esta obra no será confiable hasta que se capture.</div>';
-    return;
-  }
-  wrap.innerHTML = tableHtml(
+  const aviso = (data.length && !conCosto.length)
+    ? `<div class="data-gap-banner"><b>Los ${data.length} insumos de esta obra están capturados en $0.</b>
+        La plantilla original venía vacía en la columna de importe, así que el costo directo
+        presupuestado de esta obra sale en cero y su utilidad no es confiable. Puedes corregirlos
+        con <b>Editar</b> renglón por renglón, o volver a importar la explosión de insumos —
+        el importador reemplaza estos renglones vacíos.</div>`
+    : '';
+  wrap.innerHTML = aviso + tableHtml(
     [{label:'Clave'},{label:'Insumo'},{label:'Tipo'},{label:'Unidad'},{label:'Cantidad',num:true},{label:'Costo unitario',num:true},{label:'Importe',num:true},{label:''}],
     data,
     c => `<tr><td>${esc(c.clave||'')}</td><td>${esc(c.insumo||'')}</td><td>${esc(c.tipo||'')}</td><td>${esc(c.unidad||'')}</td>
@@ -4649,6 +4708,8 @@ async function loadInsumos(){
     'Sin insumos capturados. Usa el botón de arriba para capturarlos uno por uno.'
   );
   wrap.innerHTML = btnAgregar('generadora_insumos', 'Agregar insumo') + wrap.innerHTML;
+  document.getElementById('btn-importar-insumos').textContent =
+    conCosto.length ? '↑ Reemplazar explosión de insumos' : '↑ Importar explosión de insumos';
 }
 
 // Importar SOLO la explosión de insumos. El importador de presupuesto completo no sirve aquí:
@@ -4692,19 +4753,30 @@ document.getElementById('file-insumos').addEventListener('change', async (e) => 
     }
 
     // no encimar: si ya hay insumos, se corrigen a mano con Editar, no reimportando
-    const { data: yaHay } = await sb.from('generadora_insumos').select('id').eq('obra_id', obraId).limit(1);
-    if ((yaHay || []).length){
+    const { data: yaHay } = await sb.from('generadora_insumos').select('id,importe').eq('obra_id', obraId);
+    const conValor = (yaHay || []).filter(r => Number(r.importe || 0) > 0);
+    if (conValor.length){
       msg.className = 'modal-msg err';
-      msg.textContent = 'Esta obra ya tiene insumos capturados. Para no encimar información, corrige los renglones con el botón Editar en vez de volver a importar.';
+      msg.textContent = `Esta obra ya tiene ${conValor.length} insumos capturados con importe. Para no encimar información, corrígelos con el botón Editar en vez de volver a importar.`;
       return;
     }
+    // los renglones en $0 (plantilla vacía) sí se reemplazan: no hay nada que perder
+    const vacios = (yaHay || []).length;
 
     const total = items.reduce((a, i) => a + (Number(i.importe) || 0), 0);
-    if (!confirm(`Se van a cargar ${items.length} insumos por ${fmtMoney(total)} a "${currentObra.nombre}".\n\nEse monto pasa a ser el costo directo presupuestado de la obra. ¿Continuar?`)){
+    if (!confirm(`Se van a cargar ${items.length} insumos por ${fmtMoney(total)} a "${currentObra.nombre}".${vacios ? `\n\nSe van a reemplazar ${vacios} renglones que hoy están en $0.` : ''}\n\nEse monto pasa a ser el costo directo presupuestado de la obra. ¿Continuar?`)){
       msg.textContent = ''; return;
     }
 
     msg.textContent = 'Guardando…';
+    if (vacios){
+      const { error: errBorrar } = await sb.from('generadora_insumos').delete().eq('obra_id', obraId);
+      if (errBorrar){
+        msg.className = 'modal-msg err';
+        msg.textContent = 'No se pudieron quitar los renglones vacíos: ' + errBorrar.message;
+        return;
+      }
+    }
     const { error } = await sb.from('generadora_insumos').insert(items.map(i => ({
       obra_id: obraId, clave: i.clave, insumo: i.insumo, tipo: i.tipo, unidad: i.unidad,
       cantidad: i.cantidad, costo_unitario: i.costo_unitario, importe: i.importe,
@@ -4722,6 +4794,26 @@ document.getElementById('file-insumos').addEventListener('change', async (e) => 
     msg.className = 'modal-msg err'; msg.textContent = 'No se pudo leer el archivo: ' + err.message;
   }
 });
+
+async function loadReportesAvance(){
+  const wrap = document.getElementById('reportes-avance-wrap');
+  if (!wrap || !currentObra) return;
+  wrap.innerHTML = '<div class="loading">Cargando…</div>';
+  const { data, error } = await sb.from('avance_semanal')
+    .select('id,fecha_reporte,concepto_clave,cantidad_construida,nombre_reporta,observaciones')
+    .eq('obra_id', currentObra.obra_id)
+    .order('fecha_reporte', { ascending: false });
+  if (error){ wrap.innerHTML = '<div class="empty">Error: ' + error.message + '</div>'; return; }
+  wrap.innerHTML = tableHtml(
+    [{label:'Fecha'},{label:'Concepto'},{label:'Cantidad',num:true},{label:'Reportó'},{label:'Observaciones'},{label:''}],
+    data,
+    c => `<tr><td>${esc(c.fecha_reporte||'—')}</td><td>${esc(c.concepto_clave||'')}</td>
+      <td class="num">${Number(c.cantidad_construida||0).toLocaleString('es-MX',{maximumFractionDigits:2})}</td>
+      <td>${esc(c.nombre_reporta||'')}</td><td>${esc(c.observaciones||'')}</td>
+      <td class="col-editar">${btnEditar('avance_semanal', c.id)}</td></tr>`,
+    'Todavía no se ha reportado avance en esta obra.'
+  );
+}
 
 async function loadOdoo(){
   renderClaveOdoo();
