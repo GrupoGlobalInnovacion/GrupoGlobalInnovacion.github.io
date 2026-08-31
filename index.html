@@ -4225,7 +4225,9 @@ function updateDetailEstadoUI(r){
     badge.classList.add('hidden');
   }
 
-  const puedeEnviarRevision = estado === 'borrador' && (currentRole === 'gerencia' || currentRole === 'costos_presupuestos');
+  // Supervisión también, para que pueda cerrar el circuito de una obra que ella misma dio de
+  // alta y capturó. Autorizar sigue siendo solo de Gerencia (lo impone el trigger de la base).
+  const puedeEnviarRevision = estado === 'borrador' && (currentRole === 'gerencia' || currentRole === 'costos_presupuestos' || currentRole === 'supervision');
   const puedeAutorizar = estado === 'en_revision' && currentRole === 'gerencia';
   const puedeDevolver = estado === 'en_revision' && currentRole === 'gerencia';
   const puedeArchivar = estado === 'activa' && roleAllows('archivar');
