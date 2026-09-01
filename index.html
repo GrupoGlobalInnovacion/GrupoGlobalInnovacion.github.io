@@ -761,6 +761,20 @@
   .modal-box .actions button.danger{background:rgba(239,68,68,.12); border:1px solid rgba(239,68,68,.4);
     color:#ff9b9b; margin-right:auto;}
   .modal-box .actions button.danger:hover{background:rgba(239,68,68,.22); border-color:rgba(239,68,68,.7);}
+  .cm-cab{display:flex; gap:16px; flex-wrap:wrap; margin-bottom:4px;}
+  .cm-cab .field{margin:0;}
+  .cm-tabla{min-width:820px;}
+  .cm-tabla td, .cm-tabla th{padding:9px 12px;}
+  .cm-tabla .cm-concepto{max-width:340px;}
+  .cm-tabla tr.cm-completo{opacity:.55;}
+  .cm-listo{font-size:12px; color:var(--ok);}
+  .cm-input{width:120px; text-align:right; padding:6px 9px; font-size:14px;
+    background:rgba(255,255,255,.05); border:1px solid var(--border); border-radius:7px; color:var(--text);
+    font-variant-numeric:tabular-nums;}
+  .cm-input:focus{border-color:rgba(255,137,117,.6); background:rgba(255,255,255,.08);}
+  .cm-input.cm-excede{border-color:rgba(245,185,66,.8); color:var(--warn);}
+  .cm-pie{display:flex; align-items:center; justify-content:flex-end; gap:14px; margin-top:12px;}
+  .cm-pie .modal-msg{margin:0;}
   .btn-agregar-fila:hover{border-color:rgba(255,137,117,.65); background:rgba(255,137,117,.18);}
   .th-orden{background:none; border:none; padding:0; margin:0; cursor:pointer; font:inherit;
     color:inherit; text-transform:inherit; letter-spacing:inherit; text-align:inherit;
@@ -1121,7 +1135,11 @@
       </section>
 
       <section class="block" id="bloque-avance" data-feature="avance-tabla">
-        <h3>Avance por concepto</h3>
+        <div class="panel-head-accion">
+          <h3 style="margin:0;">Avance por concepto</h3>
+          <button class="btn-small" id="btn-captura-masiva" data-feature="avance-form">✎ Capturar avance concepto por concepto</button>
+        </div>
+        <div id="captura-masiva" class="hidden"></div>
         <div id="conceptos-wrap"></div>
       </section>
 
@@ -3509,6 +3527,19 @@ function renderGastosPreview(){
   actualizarBotonConfirmarGastos();
 }
 
+document.getElementById('btn-captura-masiva').addEventListener('click', () => {
+  const cont = document.getElementById('captura-masiva');
+  const abierto = !cont.classList.contains('hidden');
+  cont.classList.toggle('hidden', abierto);
+  document.getElementById('btn-captura-masiva').textContent = abierto
+    ? '✎ Capturar avance concepto por concepto'
+    : '✕ Cerrar la captura';
+  if (!abierto){
+    renderCapturaMasiva();
+    cont.scrollIntoView({ behavior:'smooth', block:'start' });
+  }
+});
+
 // ---------- MENÚ DE ACCIONES (⋯) DEL CONCENTRADO ----------
 (function(){
   const btn = document.getElementById('btn-menu-acciones');
@@ -4309,7 +4340,10 @@ async function openDetail(r){
     document.getElementById('conceptos-wrap').innerHTML = '<div class="empty">Error: ' + error.message + '</div>';
     return;
   }
+  conceptosCache = conceptos || [];
   renderConceptos(conceptos);
+  const cm = document.getElementById('captura-masiva');
+  if (cm && !cm.classList.contains('hidden')) renderCapturaMasiva();
   loadReportesAvance();
   fillConceptoSelect(conceptos);
   loadGastoMensual(r.obra_id);
@@ -4797,6 +4831,103 @@ document.getElementById('file-insumos').addEventListener('change', async (e) => 
     msg.className = 'modal-msg err'; msg.textContent = 'No se pudo leer el archivo: ' + err.message;
   }
 });
+
+// Captura masiva de avance. Se muestra el catálogo completo con lo contratado y lo que ya
+// lleva construido cada concepto, y se capturan solo los que cambiaron. Cada renglón con
+// cantidad se guarda como un reporte normal en avance_semanal, igual que el formulario de
+// arriba — para que el histórico y la trazabilidad no cambien de forma.
+let conceptosCache = [];
+
+function renderCapturaMasiva(){
+  const cont = document.getElementById('captura-masiva');
+  if (!cont) return;
+  if (!conceptosCache.length){
+    cont.innerHTML = '<div class="empty">Esta obra no tiene conceptos en el presupuesto todavía.</div>';
+    return;
+  }
+  const hoy = new Date().toISOString().slice(0,10);
+  cont.innerHTML = `
+    <div class="cm-cab">
+      <div class="field"><label>Fecha del reporte</label><input type="date" id="cm-fecha" value="${hoy}"></div>
+      <div class="field"><label>Tu nombre</label><input type="text" id="cm-nombre" placeholder="Nombre del residente" value="${esc(currentNombre || '')}"></div>
+    </div>
+    <div class="desc">Captura solo los conceptos donde hubo avance esta semana; los que dejes en blanco no se tocan. La cantidad se <b>suma</b> a lo que ya lleva construido.</div>
+    <div class="tabla-ancha"><table class="cm-tabla"><thead><tr>
+      <th>Clave</th><th>Concepto</th><th class="num">Contratado</th><th class="num">Ya construido</th>
+      <th class="num">Falta</th><th class="num">Construido esta semana</th>
+    </tr></thead><tbody>
+    ${conceptosCache.map(c => {
+      const contratado = Number(c.cantidad_contratada || 0);
+      const hecho = Number(c.cantidad_construida_a_la_fecha || 0);
+      const falta = Math.max(0, contratado - hecho);
+      const num = v => v.toLocaleString('es-MX', {maximumFractionDigits:2});
+      return `<tr${falta === 0 ? ' class="cm-completo"' : ''}>
+        <td>${esc(c.clave||'')}</td>
+        <td class="cm-concepto">${esc(c.concepto||'')}</td>
+        <td class="num">${num(contratado)}</td>
+        <td class="num">${num(hecho)}</td>
+        <td class="num">${falta === 0 ? '<span class="cm-listo">completo</span>' : num(falta)}</td>
+        <td class="num"><input type="number" step="any" min="0" max="${falta || ''}" class="cm-input"
+             data-id="${esc(c.concepto_id)}" data-clave="${esc(c.clave||'')}" data-falta="${falta}"
+             placeholder="0"></td>
+      </tr>`;
+    }).join('')}
+    </tbody></table></div>
+    <div class="cm-pie">
+      <div class="modal-msg" id="cm-msg"></div>
+      <button class="btn-small" id="btn-cm-guardar">Guardar los avances capturados</button>
+    </div>`;
+
+  // aviso en el momento si alguien captura más de lo que falta
+  cont.querySelectorAll('.cm-input').forEach(inp => {
+    inp.addEventListener('input', () => {
+      const falta = Number(inp.dataset.falta || 0);
+      const v = Number(inp.value || 0);
+      inp.classList.toggle('cm-excede', falta > 0 && v > falta);
+    });
+  });
+  document.getElementById('btn-cm-guardar').addEventListener('click', guardarCapturaMasiva);
+}
+
+async function guardarCapturaMasiva(){
+  const msg = document.getElementById('cm-msg');
+  const btn = document.getElementById('btn-cm-guardar');
+  const fecha = document.getElementById('cm-fecha').value;
+  const nombre = document.getElementById('cm-nombre').value.trim();
+  if (!fecha || !nombre){
+    msg.className = 'modal-msg err'; msg.textContent = 'Falta la fecha o tu nombre.'; return;
+  }
+  const filas = [];
+  let excedidos = 0;
+  document.querySelectorAll('.cm-input').forEach(inp => {
+    const v = Number(inp.value);
+    if (!inp.value.trim() || isNaN(v) || v <= 0) return;
+    if (Number(inp.dataset.falta || 0) > 0 && v > Number(inp.dataset.falta)) excedidos++;
+    filas.push({
+      obra_id: currentObra.obra_id,
+      concepto_id: inp.dataset.id,
+      concepto_clave: inp.dataset.clave || null,
+      fecha_reporte: fecha,
+      cantidad_construida: v,
+      nombre_reporta: nombre,
+      observaciones: null,
+      acepto_compromiso: true,
+    });
+  });
+  if (!filas.length){
+    msg.className = 'modal-msg err'; msg.textContent = 'No capturaste ninguna cantidad.'; return;
+  }
+  if (excedidos && !confirm(`${excedidos} concepto${excedidos>1?'s':''} quedaría${excedidos>1?'n':''} por encima de lo contratado.\n\n¿Guardar de todas formas?`)) return;
+
+  btn.disabled = true; msg.className = 'modal-msg'; msg.textContent = `Guardando ${filas.length} reportes…`;
+  const { error } = await sb.from('avance_semanal').insert(filas);
+  btn.disabled = false;
+  if (error){ msg.className = 'modal-msg err'; msg.textContent = 'Error al guardar: ' + error.message; return; }
+  msg.className = 'modal-msg ok'; msg.textContent = `${filas.length} avances guardados.`;
+  logActividad('avance', `${filas.length} conceptos capturados (${fecha})`, currentObra.obra_id, currentObra.nombre);
+  await refrescarObraActual();
+  await openDetail(currentObra);
+}
 
 async function loadReportesAvance(){
   const wrap = document.getElementById('reportes-avance-wrap');
