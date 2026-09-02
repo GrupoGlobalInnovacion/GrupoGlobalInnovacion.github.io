@@ -4679,6 +4679,7 @@ document.getElementById('btn-ef-guardar').addEventListener('click', async () => 
   } else {
     ({ error } = await sb.from(tabla).update(cambios).eq('id', id));
   }
+  if (!error && tabla === 'presupuesto_ganador') await espejarCostoDirecto(cambios);
   btn.disabled = false;
   if (error){ msg.className = 'modal-msg err'; msg.textContent = 'Error al guardar: ' + error.message; return; }
   logActividad(id === null ? 'agregar_fila' : 'editar_fila',
@@ -4929,6 +4930,26 @@ async function guardarCapturaMasiva(){
   await openDetail(currentObra);
 }
 
+// El avance se reporta contra presupuesto_costo_directo, no contra el ganador. Cada concepto
+// del presupuesto tiene que existir en las dos tablas o no aparece en el selector de conceptos.
+async function espejarCostoDirecto(c){
+  if (!currentObra || !c || !c.clave) return;
+  const obraId = currentObra.obra_id;
+  const fila = {
+    obra_id: obraId,
+    clave: c.clave,
+    concepto: c.concepto || null,
+    unidad: c.unidad || null,
+    cantidad_contratada: Number(c.cantidad || 0),
+    precio_unitario_costo: Number(c.precio_unitario || 0),
+    importe_costo: Number(c.importe || 0),
+  };
+  const { data: ya } = await sb.from('presupuesto_costo_directo')
+    .select('id').eq('obra_id', obraId).eq('clave', c.clave).maybeSingle();
+  if (ya) await sb.from('presupuesto_costo_directo').update(fila).eq('id', ya.id);
+  else await sb.from('presupuesto_costo_directo').insert({ ...fila, cantidad_construida_actual: 0 });
+}
+
 async function loadReportesAvance(){
   const wrap = document.getElementById('reportes-avance-wrap');
   if (!wrap || !currentObra) return;
@@ -5125,7 +5146,12 @@ document.getElementById('form-ingreso').addEventListener('submit', async (e) => 
 
 function renderConceptos(rows){
   const wrap = document.getElementById('conceptos-wrap');
-  if (!rows.length){ wrap.innerHTML = '<div class="empty">Sin conceptos.</div>'; return; }
+  if (!rows.length){
+    wrap.innerHTML = `<div class="data-gap-banner">Esta obra todavía no tiene conceptos contra los
+      cuales reportar avance. Carga su presupuesto desde la pestaña <b>Presupuesto Ganador</b>
+      (con «+ Agregar concepto» o importando el Excel) y aquí aparecerán solos.</div>`;
+    return;
+  }
   let html = `<table><thead><tr>
     <th>Clave</th><th>Concepto</th><th class="num">Contratado</th><th class="num">Construido</th>
     <th class="num">% avance</th><th class="num">Peso en obra</th><th>Estatus</th><th>Último reporte</th>
