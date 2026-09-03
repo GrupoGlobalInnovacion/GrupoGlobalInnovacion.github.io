@@ -9,6 +9,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
   :root{
     /* Paleta neutra oscura tomada de los valores reales de Paymark (fondo rgb(14,14,14)),
@@ -684,6 +686,75 @@
   header .brand img{height:40px; width:auto; display:block;}
 
   /* top-level tabs (bigger, since they're primary navigation) */
+
+  /* ---------- FILTRO DE OBRAS (compartido por Todas las Obras y el Mapa) ---------- */
+  .filtros-obras{display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:0 0 18px;}
+  .filtros-obras input[type=search], .filtros-obras select{
+    background:var(--panel2); color:var(--text); border:1px solid var(--border);
+    border-radius:8px; padding:8px 11px; font-size:13.5px; font-family:inherit;}
+  .filtros-obras input[type=search]{min-width:250px; flex:1 1 250px; max-width:380px;}
+  .filtros-obras input[type=search]::placeholder{color:var(--muted);}
+  .fo-check{display:flex; align-items:center; gap:7px; font-size:13.5px; color:var(--muted); cursor:pointer; white-space:nowrap;}
+  .fo-check input{accent-color:var(--accent); width:15px; height:15px; cursor:pointer;}
+  .filtros-obras .fo-limpiar{
+    background:transparent; color:var(--muted); border:1px solid var(--border);
+    border-radius:8px; padding:8px 13px; font-size:13.5px; cursor:pointer; font-family:inherit;}
+  .filtros-obras .fo-limpiar:hover{color:var(--text); border-color:var(--muted);}
+  .fo-conteo{font-size:13px; color:var(--muted); margin-left:auto; white-space:nowrap;}
+
+  /* ---------- MAPA ---------- */
+  #mapa-canvas{height:540px; border-radius:12px; border:1px solid var(--border); overflow:hidden; background:#0b0b0b;}
+  @media (max-width:700px){ #mapa-canvas{height:400px;} }
+  .leaflet-container{background:#0b0b0b; font-family:inherit;}
+  .leaflet-popup-content-wrapper, .leaflet-popup-tip{
+    background:var(--panel2); color:var(--text); border:1px solid var(--border);
+    box-shadow:0 14px 38px rgba(0,0,0,.55);}
+  .leaflet-popup-content-wrapper{border-radius:11px;}
+  .leaflet-popup-content{margin:13px 15px; font-size:13px; line-height:1.45;}
+  .leaflet-popup-close-button{color:var(--muted) !important; padding:6px 7px 0 0 !important;}
+  .leaflet-popup-close-button:hover{color:var(--text) !important;}
+  .leaflet-control-layers, .leaflet-bar a{
+    background:var(--panel2) !important; color:var(--text) !important; border-color:var(--border) !important;}
+  .leaflet-bar a:hover{background:var(--panel) !important;}
+  .leaflet-control-layers label{color:var(--text); font-size:13px;}
+  .leaflet-control-attribution{background:rgba(14,14,14,.78) !important; color:var(--muted) !important; font-size:10.5px;}
+  .leaflet-control-attribution a{color:var(--muted) !important;}
+  .mapa-conteo{background:transparent !important; border:0 !important; box-shadow:none !important;
+    color:#0e0e0e !important; font-weight:700; font-size:11px; padding:0 !important;}
+  .mapa-conteo::before{display:none !important;}
+  /* con 3 obras en el mismo punto (Umán, Pomuch) la burbuja se sale de la pantalla */
+  .mapa-pop{max-height:300px; overflow-y:auto; padding-right:4px;}
+  .mapa-pop::-webkit-scrollbar{width:6px;}
+  .mapa-pop::-webkit-scrollbar-thumb{background:var(--border); border-radius:3px;}
+  .mapa-pop-lugar{position:sticky; top:0; background:var(--panel2); padding-bottom:7px; margin:0 0 6px; font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted);}
+  .mapa-pop-obra + .mapa-pop-obra{margin-top:14px; padding-top:13px; border-top:1px solid var(--border);}
+  .mapa-pop-nombre{display:flex; align-items:flex-start; gap:8px; font-weight:600; font-size:13.5px; margin-bottom:9px;}
+  .mapa-pop-punto{width:9px; height:9px; border-radius:50%; flex:0 0 9px; margin-top:5px;}
+  .mapa-pop-fila{display:flex; justify-content:space-between; gap:12px; font-size:12.5px; color:var(--muted); margin-top:7px;}
+  .mapa-pop-fila b{color:var(--text); font-weight:600;}
+  .mapa-pop-barra{height:5px; border-radius:3px; background:rgba(255,255,255,.09); overflow:hidden; margin-top:4px;}
+  .mapa-pop-barra i{display:block; height:100%; border-radius:3px;}
+  .mapa-pop-barra i.construido{background:var(--accent);}
+  .mapa-pop-barra i.gastado{background:var(--warn);}
+  .mapa-pop-barra i.cobrado{background:var(--ok);}
+  .mapa-pop-acciones{display:flex; gap:8px; flex-wrap:wrap; margin-top:11px;}
+  .mapa-pop-acciones button{
+    background:var(--accent); color:#fff; border:0; border-radius:7px;
+    padding:6px 12px; font-size:12.5px; cursor:pointer; font-family:inherit;}
+  .mapa-pop-acciones button.tenue{background:transparent; color:var(--muted); border:1px solid var(--border);}
+  .mapa-pop-acciones button.tenue:hover{color:var(--text); border-color:var(--muted);}
+  .mapa-pop-aprox{margin-top:11px; font-size:11.5px; color:var(--warn); background:rgba(245,185,66,.09);
+    border:1px solid rgba(245,185,66,.28); border-radius:7px; padding:6px 9px;}
+  .mapa-sin{margin-top:18px; background:var(--panel); border:1px solid var(--border); border-radius:11px; padding:15px 17px;}
+  .mapa-sin-titulo{font-size:13px; font-weight:600; margin-bottom:4px;}
+  .mapa-sin-desc{font-size:12.5px; color:var(--muted); margin-bottom:12px;}
+  .mapa-sin-item{display:flex; align-items:center; justify-content:space-between; gap:14px;
+    padding:9px 0; border-top:1px solid var(--border); font-size:13px;}
+  .mapa-sin-item button{background:transparent; color:var(--accent); border:1px solid var(--border);
+    border-radius:7px; padding:5px 11px; font-size:12.5px; cursor:pointer; font-family:inherit; white-space:nowrap;}
+  .mapa-sin-item button:hover{border-color:var(--accent);}
+  .mapa-aviso{background:var(--panel); border:1px solid var(--border); border-radius:11px;
+    padding:22px; text-align:center; color:var(--muted); font-size:13.5px;}
   #top-tabs{margin-bottom:4px;}
   #top-tabs .tab-btn{font-size:14px; padding:10px 16px;}
 
@@ -988,6 +1059,7 @@
         <div class="tabs" id="top-tabs">
           <button class="tab-btn active" data-toptab="resumen" data-feature="tab-resumen">Resumen Ejecutivo</button>
           <button class="tab-btn" data-toptab="todas" data-feature="tab-todas">Todas las Obras</button>
+          <button class="tab-btn" data-toptab="mapa" data-feature="tab-mapa">Mapa</button>
           <button class="tab-btn" data-toptab="equilibrio" data-feature="tab-equilibrio">Resumen mensual</button>
           <button class="tab-btn" data-toptab="supervision" data-feature="tab-supervision">Supervisión</button>
           <button class="tab-btn" data-toptab="actividad" data-feature="tab-actividad">Actividad</button>
@@ -1005,7 +1077,15 @@
         </div>
 
         <div id="toptab-todas" class="toptab-panel hidden" data-feature="tab-todas">
+          <div class="filtros-obras" data-filtro="todas"></div>
           <div id="grid"></div>
+        </div>
+
+        <div id="toptab-mapa" class="toptab-panel hidden" data-feature="tab-mapa">
+          <div class="narrativa">Dónde está cada obra y cómo va. El color del punto es su semáforo; pásale el mouse o tócalo para ver el avance físico, lo gastado y lo cobrado. Un punto con número son varias obras en el mismo lugar.</div>
+          <div class="filtros-obras" data-filtro="mapa"></div>
+          <div id="mapa-canvas"></div>
+          <div id="mapa-sin-ubicar"></div>
         </div>
 
         <div id="toptab-equilibrio" class="toptab-panel hidden" data-feature="tab-equilibrio">
@@ -1310,6 +1390,26 @@
     </div>
   </div>
 
+  <div id="modal-ubicacion" class="modal-overlay hidden">
+    <div class="modal-box">
+      <h3>Ubicación de la obra</h3>
+      <div class="desc">En Google Maps dale <b>clic derecho sobre el punto exacto de la obra</b> (o mantén el dedo apretado, en celular): lo primero que sale son las coordenadas. Tócalas para copiarlas y pégalas aquí tal cual.</div>
+      <div class="field">
+        <label for="ub-obra">Obra</label>
+        <input type="text" id="ub-obra" disabled>
+      </div>
+      <div class="field">
+        <label for="ub-coord">Coordenadas</label>
+        <input type="text" id="ub-coord" placeholder="20.884300, -89.745200" autocomplete="off">
+      </div>
+      <div class="modal-msg" id="ub-msg"></div>
+      <div class="actions">
+        <button class="secondary" id="btn-ub-cancelar">Cancelar</button>
+        <button class="primary" id="btn-ub-guardar">Guardar ubicación</button>
+      </div>
+    </div>
+  </div>
+
   <div id="modal-datos-contrato" class="modal-overlay hidden">
     <div class="modal-box">
       <h3>Datos del contrato</h3>
@@ -1469,17 +1569,17 @@ let directorioList = []; // [{nombre,email,puesto,orden}] — se llena en loadDi
 // Este mapa refleja exactamente lo que las políticas RLS ya permiten en Supabase — es solo para
 // que cada quien vea una interfaz limpia y acorde a su puesto; la seguridad real vive en la base de datos.
 const ROLE_FEATURES = {
-  gerencia: ['tab-resumen','tab-todas','tab-equilibrio','tab-supervision','tab-actividad','nueva-obra','archivar',
+  gerencia: ['tab-resumen','tab-todas','tab-mapa','tab-equilibrio','tab-supervision','tab-actividad','nueva-obra','archivar',
     'dtab-ganador','dtab-insumos','dtab-odoo','dtab-cobranza','dtab-ingresos',
     'avance-form','avance-tabla','kpi-costo','kpi-odoo','kpi-disponible','kpi-utilpres','kpi-utilproy','kpi-pendiente',
     'bar-construido','bar-gastado','bar-cobrado','importar-gastos-odoo','modificar-contrato','kpi-comision','kpi-venta','kpi-avance'],
-  costos_presupuestos: ['tab-todas','nueva-obra','archivar',
+  costos_presupuestos: ['tab-todas','tab-mapa','nueva-obra','archivar',
     'dtab-ganador','dtab-insumos',
     'avance-tabla','kpi-costo','kpi-utilpres','bar-construido','modificar-contrato','kpi-venta','kpi-avance'],
-  administracion: ['tab-todas','tab-equilibrio','kpi-avance',
+  administracion: ['tab-todas','tab-mapa','tab-equilibrio','kpi-avance',
     'dtab-odoo','dtab-ingresos',
     'kpi-odoo','importar-gastos-odoo'],
-  supervision: ['tab-resumen','tab-todas','tab-equilibrio','tab-supervision','archivar',
+  supervision: ['tab-resumen','tab-todas','tab-mapa','tab-equilibrio','tab-supervision','archivar',
     'dtab-ganador','dtab-insumos','dtab-odoo','dtab-cobranza','dtab-ingresos','modificar-contrato','nueva-obra',
     'avance-form','avance-tabla','kpi-costo','kpi-odoo','kpi-disponible','kpi-utilpres','kpi-utilproy','kpi-pendiente',
     'bar-construido','bar-gastado','bar-cobrado','kpi-comision','kpi-venta','kpi-avance'],
@@ -1698,7 +1798,7 @@ async function loadConcentrado(){
   // en loadSupervisionChecklist), sin afectar nada más. Posiciones fijas en el array (con
   // Promise.resolve como relleno cuando no se pide cobranza) para no depender del orden
   // condicional de un push.
-  const [panelRes, obrasRes, cobranzaRes, obrasCreadasRes, gastoAManoRes] = await Promise.all([
+  const [panelRes, obrasRes, cobranzaRes, obrasCreadasRes, gastoAManoRes, ubicRes] = await Promise.all([
     sb.from('v_panel_control').select('*').order('nombre'),
     sb.from('obras').select('id,activo,estado'),
     pedirCobranza ? sb.from('cobranza').select('obra_id') : Promise.resolve({ data: null, error: null }),
@@ -1708,6 +1808,10 @@ async function loadConcentrado(){
     // muestra el aviso y el tablero sigue funcionando igual.
     sb.from('costo_directo_odoo').select('total_pagado', { count: 'exact' })
       .is('odoo_record_id', null).neq('estado', 'Manual'),
+    // ubicación en su PROPIA consulta y sin revisar el error, por la misma razón que
+    // created_at arriba: si estas columnas no existieran todavía, el mapa sale vacío
+    // pero el tablero completo sigue cargando igual.
+    sb.from('obras').select('id,latitud,longitud,ubicacion_exacta,localidad,municipio,entidad'),
   ]);
   renderAvisoGastoProvisional(gastoAManoRes);
   document.getElementById('concentrado-loading').classList.add('hidden');
@@ -1732,7 +1836,15 @@ async function loadConcentrado(){
   const obraInfoById = new Map(obrasRes.data.map(o => [o.id, o]));
   // best-effort: null hasta que se corra la migración de Etapa 5 (ver arriba), sin romper nada.
   const creadaById = new Map((obrasCreadasRes && obrasCreadasRes.data) ? obrasCreadasRes.data.map(o => [o.id, o.created_at]) : []);
+  const ubicById = new Map((ubicRes && ubicRes.data) ? ubicRes.data.map(o => [o.id, o]) : []);
   panelRes.data.forEach(r => {
+    const u = ubicById.get(r.obra_id) || {};
+    r.latitud = (u.latitud === null || u.latitud === undefined) ? null : Number(u.latitud);
+    r.longitud = (u.longitud === null || u.longitud === undefined) ? null : Number(u.longitud);
+    r.ubicacion_exacta = !!u.ubicacion_exacta;
+    r.localidad = u.localidad || null;
+    r.municipio = u.municipio || null;
+    r.entidad = u.entidad || null;
     const info = obraInfoById.get(r.obra_id);
     r.estado = info ? (info.estado || (info.activo !== false ? 'activa' : 'archivada')) : null;
     // usado para "antigüedad" de huecos de captura en el checklist de Supervisión (cuántos
@@ -1747,7 +1859,8 @@ async function loadConcentrado(){
 
   renderKpis(activeRows);
   renderResumenEjecutivo(activeRows);
-  renderTodasObras(activeRows);
+  renderFiltroObras();
+  aplicarFiltroObras();
   loadAtencionSemana();
   capturarSnapshotPanel(activeRows); // sin await: no debe retrasar el render del Concentrado
 
@@ -2139,9 +2252,349 @@ function renderTodasObras(rows){
     grid.appendChild(sub);
   }
   if (!any){
-    grid.innerHTML = '<div class="empty">No hay obras activas. Agrega una obra nueva o revisa las obras archivadas.</div>';
+    grid.innerHTML = filtroActivo()
+      ? '<div class="empty">Ninguna obra coincide con el filtro. Usa "Limpiar" para ver todas.</div>'
+      : '<div class="empty">No hay obras activas. Agrega una obra nueva o revisa las obras archivadas.</div>';
   }
 }
+
+// ============================================================================
+// FILTRO DE OBRAS — una sola barra que manda en las dos vistas (tarjetas y mapa),
+// para que filtrar "Umán" deje las mismas 3 obras en las dos. La barra se dibuja
+// una vez por carga de datos; al teclear NO se vuelve a dibujar (eso tumbaría el
+// foco del buscador a media palabra), solo se sincronizan las copias y se repinta
+// lo de abajo.
+// ============================================================================
+const filtroObras = { texto:'', lugar:'todos', estatus:'todos', pendientes:false };
+
+function filtroActivo(){
+  return !!filtroObras.texto.trim() || filtroObras.lugar !== 'todos'
+      || filtroObras.estatus !== 'todos' || filtroObras.pendientes;
+}
+
+// etiqueta con la que se agrupa en el selector: "Pucnachén, Calkiní" — la localidad
+// sola no basta (hay tres obras en Umán con localidades distintas) y el municipio
+// solo tampoco (Pomuch y Hecelchakán se leerían como lugares distintos).
+function lugarDeObra(r){
+  if (r.localidad && r.municipio && r.localidad !== r.municipio) return r.localidad + ', ' + r.municipio;
+  return r.municipio || r.localidad || 'Sin ubicación';
+}
+
+function obrasFiltradas(rows){
+  const t = filtroObras.texto.trim().toLowerCase();
+  return rows.filter(r => {
+    if (t){
+      const heno = [r.nombre, r.localidad, r.municipio, r.entidad].filter(Boolean).join(' ').toLowerCase();
+      if (!heno.includes(t)) return false;
+    }
+    if (filtroObras.lugar !== 'todos' && lugarDeObra(r) !== filtroObras.lugar) return false;
+    if (filtroObras.estatus !== 'todos' && r.estatus !== filtroObras.estatus) return false;
+    if (filtroObras.pendientes && !anyGap(r)) return false;
+    return true;
+  });
+}
+
+function renderFiltroObras(){
+  const lugares = Array.from(new Set(activeRows.map(lugarDeObra))).sort((a,b) => a.localeCompare(b,'es'));
+  const semaforos = [['ALERTA','Alerta'],['PRECAUCIÓN','Precaución'],['OK','Al corriente']];
+  const html = `
+    <input type="search" class="fo-texto" placeholder="Buscar obra, localidad o municipio…" value="${esc(filtroObras.texto)}">
+    <select class="fo-lugar">
+      <option value="todos">Toda la ubicación</option>
+      ${lugares.map(l => `<option value="${esc(l)}"${filtroObras.lugar === l ? ' selected' : ''}>${esc(l)}</option>`).join('')}
+    </select>
+    <select class="fo-estatus">
+      <option value="todos">Cualquier semáforo</option>
+      ${semaforos.map(([v,t]) => `<option value="${esc(v)}"${filtroObras.estatus === v ? ' selected' : ''}>${esc(t)}</option>`).join('')}
+    </select>
+    <label class="fo-check"><input type="checkbox" class="fo-pendientes"${filtroObras.pendientes ? ' checked' : ''}> Solo con pendientes</label>
+    <button class="fo-limpiar" type="button">Limpiar</button>
+    <span class="fo-conteo"></span>`;
+  document.querySelectorAll('.filtros-obras').forEach(c => { c.innerHTML = html; });
+}
+
+function sincronizarControlesFiltro(origen){
+  document.querySelectorAll('.filtros-obras').forEach(c => {
+    if (c === origen) return;
+    const t = c.querySelector('.fo-texto');       if (t && t.value !== filtroObras.texto) t.value = filtroObras.texto;
+    const l = c.querySelector('.fo-lugar');       if (l && l.value !== filtroObras.lugar) l.value = filtroObras.lugar;
+    const e = c.querySelector('.fo-estatus');     if (e && e.value !== filtroObras.estatus) e.value = filtroObras.estatus;
+    const x = c.querySelector('.fo-pendientes');  if (x && x.checked !== filtroObras.pendientes) x.checked = filtroObras.pendientes;
+  });
+}
+
+function aplicarFiltroObras(origen){
+  sincronizarControlesFiltro(origen);
+  const visibles = obrasFiltradas(activeRows);
+  document.querySelectorAll('.fo-conteo').forEach(e => {
+    e.textContent = visibles.length === activeRows.length
+      ? `${activeRows.length} obra${activeRows.length === 1 ? '' : 's'}`
+      : `${visibles.length} de ${activeRows.length}`;
+  });
+  renderTodasObras(visibles);
+  renderMapa();
+}
+
+document.addEventListener('input', (e) => {
+  if (!e.target.classList.contains('fo-texto')) return;
+  filtroObras.texto = e.target.value;
+  aplicarFiltroObras(e.target.closest('.filtros-obras'));
+});
+document.addEventListener('change', (e) => {
+  const cont = e.target.closest('.filtros-obras');
+  if (!cont) return;
+  if (e.target.classList.contains('fo-lugar')) filtroObras.lugar = e.target.value;
+  else if (e.target.classList.contains('fo-estatus')) filtroObras.estatus = e.target.value;
+  else if (e.target.classList.contains('fo-pendientes')) filtroObras.pendientes = e.target.checked;
+  else return;
+  aplicarFiltroObras(cont);
+});
+document.addEventListener('click', (e) => {
+  if (!e.target.classList.contains('fo-limpiar')) return;
+  filtroObras.texto = ''; filtroObras.lugar = 'todos'; filtroObras.estatus = 'todos'; filtroObras.pendientes = false;
+  renderFiltroObras();
+  aplicarFiltroObras();
+});
+
+// ============================================================================
+// MAPA — Leaflet con mapas de CARTO (oscuro, para que combine con el tablero) y
+// satélite de Esri. Los dos son gratis y sin llave: una llave de Google Maps
+// tendría que ir escrita en este archivo, que es una página pública.
+// ============================================================================
+let mapa = null, mapaCapaPines = null;
+const COLOR_ESTATUS = { OK:'#22c55e', 'PRECAUCIÓN':'#f5b942', ALERTA:'#ef4444' };
+// península de Yucatán: sirve para avisar cuando alguien pega la latitud y la
+// longitud al revés, que es el error clásico y manda el pin al otro lado del mundo.
+const CAJA_SURESTE = { latMin:17, latMax:22.5, lngMin:-92.5, lngMax:-86.5 };
+
+function tieneUbicacion(r){
+  return typeof r.latitud === 'number' && !isNaN(r.latitud)
+      && typeof r.longitud === 'number' && !isNaN(r.longitud);
+}
+
+function iniciarMapa(){
+  if (mapa) return;
+  const cont = document.getElementById('mapa-canvas');
+  if (!cont) return;
+  if (typeof L === 'undefined'){
+    cont.innerHTML = '<div class="mapa-aviso">No se pudo cargar el mapa. Revisa tu conexión y vuelve a entrar a esta pestaña.</div>';
+    return;
+  }
+  mapa = L.map(cont, { scrollWheelZoom:false }).setView([20.4, -89.4], 8);
+  // Los mapas base son de Esri (ArcGIS Online), que sirve estos endpoints sin llave.
+  // CARTO ya empezó a exigir API key y sus mosaicos salen con una marca de agua encima.
+  const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/';
+  const capa = (ruta, opts) => L.tileLayer(ESRI + ruta + '/MapServer/tile/{z}/{y}/{x}',
+    Object.assign({ maxZoom:19, attribution:'&copy; Esri' }, opts || {}));
+  // el mapa gris oscuro y el satélite vienen sin nombres de lugar: los nombres son
+  // una capa aparte que va montada encima de cada uno
+  const mapaOscuro = L.layerGroup([
+    capa('Canvas/World_Dark_Gray_Base'),
+    capa('Canvas/World_Dark_Gray_Reference'),
+  ]).addTo(mapa);
+  const satelite = L.layerGroup([
+    capa('World_Imagery', { attribution:'Imágenes &copy; Esri' }),
+    capa('Reference/World_Boundaries_and_Places'),
+  ]);
+  L.control.layers({ 'Mapa':mapaOscuro, 'Satélite':satelite }, null, { position:'topright' }).addTo(mapa);
+  // el scroll del mouse hace zoom solo cuando ya le diste clic al mapa: si no, bajar
+  // por la página con la rueda encima del mapa se convierte en un zoom involuntario
+  mapa.on('click', () => mapa.scrollWheelZoom.enable());
+  mapa.on('mouseout', () => mapa.scrollWheelZoom.disable());
+  mapaCapaPines = L.layerGroup().addTo(mapa);
+
+  // El mapa se construye mientras su pestaña todavía está oculta, así que el contenedor
+  // mide 0 y Leaflet solo alcanza a dibujar una tira de mosaicos. Observar el contenedor
+  // es más confiable que adivinar con un setTimeout: en cuanto tiene tamaño real se
+  // remide, y la primera vez además se encuadra a los pines.
+  if (typeof ResizeObserver !== 'undefined'){
+    let anchoPrevio = 0;
+    new ResizeObserver(() => {
+      if (!mapa || !cont.clientWidth) return;
+      mapa.invalidateSize();
+      if (!anchoPrevio) ajustarVistaMapa();  // solo al aparecer; después no le pisamos el zoom al usuario
+      anchoPrevio = cont.clientWidth;
+    }).observe(cont);
+  }
+}
+
+let mapaPuntos = [];
+function ajustarVistaMapa(){
+  if (!mapa || !mapaPuntos.length) return;
+  mapa.fitBounds(mapaPuntos, { padding:[45,45], maxZoom: mapaPuntos.length === 1 ? 14 : 11 });
+}
+
+function renderMapa(){
+  if (!mapa || !mapaCapaPines) return;
+  mapaCapaPines.clearLayers();
+  const rows = obrasFiltradas(activeRows);
+  const conUbic = rows.filter(tieneUbicacion);
+
+  // varias obras en el mismo punto comparten pin (hay 3 en Pomuch y 3 en Umán);
+  // si no se agruparan, quedarían encimadas y solo se vería la de hasta arriba
+  const grupos = new Map();
+  for (const r of conUbic){
+    const k = r.latitud.toFixed(4) + ',' + r.longitud.toFixed(4);
+    if (!grupos.has(k)) grupos.set(k, []);
+    grupos.get(k).push(r);
+  }
+
+  mapaPuntos = [];
+  for (const [k, items] of grupos){
+    const lat = Number(k.split(',')[0]), lng = Number(k.split(',')[1]);
+    items.sort((a,b) => (ESTATUS_ORDER[a.estatus] ?? 9) - (ESTATUS_ORDER[b.estatus] ?? 9));
+    const marcador = L.circleMarker([lat, lng], {
+      radius: items.length > 1 ? 12 : 9,
+      color: '#0e0e0e', weight: 2.5,
+      fillColor: COLOR_ESTATUS[items[0].estatus] || '#8f8f8f', fillOpacity: .95,
+    }).addTo(mapaCapaPines);
+    if (items.length > 1){
+      marcador.bindTooltip(String(items.length), { permanent:true, direction:'center', className:'mapa-conteo' });
+    }
+    marcador.bindPopup(popupMapa(items), { maxWidth:320, minWidth:255, className:'mapa-popup', autoPanPadding:[24,24] });
+    mapaPuntos.push([lat, lng]);
+  }
+
+  // si el contenedor todavía no tiene tamaño (pestaña oculta), encuadrar daría un zoom
+  // absurdo; el ResizeObserver lo hace en cuanto aparece
+  if (document.getElementById('mapa-canvas').clientWidth) ajustarVistaMapa();
+  renderSinUbicar(rows.filter(r => !tieneUbicacion(r)));
+}
+
+// la burbuja enseña a cada rol solo los renglones que ese rol ya ve en el resto
+// del tablero: Costos no ve gasto ni cobranza, Administración no ve cobranza.
+function popupMapa(items){
+  const partes = [items[0].localidad, items[0].municipio, items[0].entidad].filter(Boolean);
+  const lugar = partes.length
+    ? `<div class="mapa-pop-lugar">${esc(Array.from(new Set(partes)).join(' · '))}</div>` : '';
+  const puedeUbicar = roleAllows('modificar-contrato');
+  const cuerpo = items.map(r => {
+    let filas = '';
+    if (roleAllows('bar-construido') || roleAllows('kpi-avance')) filas += barraPopup('Avance físico', r.pct_ya_construido, 'construido');
+    if (roleAllows('bar-gastado')    || roleAllows('kpi-odoo'))   filas += barraPopup('Gastado', r.pct_ya_gastado, 'gastado');
+    if (roleAllows('bar-cobrado'))                                filas += barraPopup('Cobrado', r.pct_cobrado, 'cobrado');
+    return `<div class="mapa-pop-obra">
+      <div class="mapa-pop-nombre"><span class="mapa-pop-punto" style="background:${COLOR_ESTATUS[r.estatus] || '#8f8f8f'}"></span>${esc(r.nombre)}</div>
+      ${filas}
+      <div class="mapa-pop-acciones">
+        <button type="button" class="btn-mapa-abrir" data-obra-id="${esc(String(r.obra_id))}">Abrir obra</button>
+        ${puedeUbicar ? `<button type="button" class="tenue btn-ubicar" data-obra-id="${esc(String(r.obra_id))}">Ajustar ubicación</button>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+  const aprox = items.some(r => !r.ubicacion_exacta)
+    ? '<div class="mapa-pop-aprox">Ubicación aproximada del pueblo. Para dejarla en el punto exacto, usa «Ajustar ubicación».</div>'
+    : '';
+  return `<div class="mapa-pop">${lugar}${cuerpo}${aprox}</div>`;
+}
+
+function barraPopup(etiqueta, valor, clase){
+  return `<div class="mapa-pop-fila"><span>${esc(etiqueta)}</span><b>${fmtPct(valor)}</b></div>
+    <div class="mapa-pop-barra"><i class="${clase}" style="width:${clampPct(valor)}%"></i></div>`;
+}
+
+function renderSinUbicar(sinUbic){
+  const wrap = document.getElementById('mapa-sin-ubicar');
+  if (!wrap) return;
+  if (!sinUbic.length){ wrap.innerHTML = ''; return; }
+  const puedeUbicar = roleAllows('modificar-contrato');
+  wrap.innerHTML = `<div class="mapa-sin">
+    <div class="mapa-sin-titulo">Sin ubicación (${sinUbic.length})</div>
+    <div class="mapa-sin-desc">Estas obras no salen en el mapa porque nadie ha capturado dónde están.</div>
+    ${sinUbic.map(r => `<div class="mapa-sin-item"><span>${esc(r.nombre)}</span>
+      ${puedeUbicar ? `<button type="button" class="btn-ubicar" data-obra-id="${esc(String(r.obra_id))}">Poner ubicación</button>` : ''}
+    </div>`).join('')}
+  </div>`;
+}
+
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('.btn-mapa-abrir');
+  if (!b) return;
+  const r = activeRows.find(x => String(x.obra_id) === b.dataset.obraId);
+  if (r) openDetail(r);
+});
+
+// ---------- capturar la coordenada que da Google Maps ----------
+let ubicacionEditando = null;
+
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('.btn-ubicar');
+  if (!b) return;
+  const r = activeRows.find(x => String(x.obra_id) === b.dataset.obraId);
+  if (!r) return;
+  ubicacionEditando = r;
+  document.getElementById('ub-obra').value = r.nombre || '';
+  document.getElementById('ub-coord').value = tieneUbicacion(r) && r.ubicacion_exacta
+    ? `${r.latitud}, ${r.longitud}` : '';
+  const msg = document.getElementById('ub-msg');
+  msg.className = 'modal-msg'; msg.textContent = '';
+  openModal('modal-ubicacion');
+  document.getElementById('ub-coord').focus();
+});
+
+document.getElementById('btn-ub-cancelar').addEventListener('click', () => {
+  ubicacionEditando = null;
+  closeModal('modal-ubicacion');
+});
+
+// Acepta las tres formas en que Google Maps entrega una coordenada: el par suelto
+// del clic derecho ("20.8843, -89.7452"), una liga de maps (…/@20.8843,-89.7452,17z
+// o ?q=…), y los grados-minutos-segundos que muestra la ficha del lugar.
+function parsearCoordenadas(txt){
+  if (!txt) return null;
+  const s = String(txt).trim();
+
+  const dms = s.match(/(\d+)\s*°\s*(\d+)\s*'\s*([\d.]+)\s*"?\s*([NS])[,\s]+(\d+)\s*°\s*(\d+)\s*'\s*([\d.]+)\s*"?\s*([EWO])/i);
+  if (dms){
+    const aDecimal = (g, m, sg, hemi) => {
+      const v = Number(g) + Number(m)/60 + Number(sg)/3600;
+      return /[SWO]/i.test(hemi) ? -v : v;
+    };
+    return { lat: aDecimal(dms[1],dms[2],dms[3],dms[4]), lng: aDecimal(dms[5],dms[6],dms[7],dms[8]) };
+  }
+
+  const suelto = s.match(/^\(?\s*(-?\d{1,3}(?:\.\d+)?)\s*[,;]?\s+?\s*(-?\d{1,3}(?:\.\d+)?)\s*\)?$/)
+              || s.match(/^\(?\s*(-?\d{1,3}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)\s*\)?$/);
+  const enLiga = s.match(/[@?&=\/](-?\d{1,3}\.\d+),\s*(-?\d{1,3}\.\d+)/);
+  const m = suelto || enLiga;
+  if (!m) return null;
+  const lat = Number(m[1]), lng = Number(m[2]);
+  if (isNaN(lat) || isNaN(lng)) return null;
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  return { lat, lng };
+}
+
+document.getElementById('btn-ub-guardar').addEventListener('click', async () => {
+  if (!ubicacionEditando) return;
+  const msg = document.getElementById('ub-msg');
+  const btn = document.getElementById('btn-ub-guardar');
+  const crudo = document.getElementById('ub-coord').value;
+  const c = parsearCoordenadas(crudo);
+  if (!c){
+    msg.className = 'modal-msg err';
+    msg.textContent = 'No reconocí esas coordenadas. Deben verse así: 20.884300, -89.745200. Si pegaste una liga corta (maps.app.goo.gl) ábrela primero y copia las coordenadas.';
+    return;
+  }
+  const fuera = c.lat < CAJA_SURESTE.latMin || c.lat > CAJA_SURESTE.latMax
+             || c.lng < CAJA_SURESTE.lngMin || c.lng > CAJA_SURESTE.lngMax;
+  if (fuera && !confirm(`Esas coordenadas (${c.lat}, ${c.lng}) caen fuera de la península de Yucatán.
+
+Lo más común es haber invertido la latitud y la longitud: la latitud va primero y es positiva (20.x), la longitud va después y es negativa (-89.x).
+
+¿Guardarlas de todas formas?`)) return;
+
+  btn.disabled = true; msg.className = 'modal-msg'; msg.textContent = 'Guardando…';
+  const { error } = await sb.from('obras')
+    .update({ latitud: c.lat, longitud: c.lng, ubicacion_exacta: true })
+    .eq('id', ubicacionEditando.obra_id);
+  btn.disabled = false;
+  if (error){ msg.className = 'modal-msg err'; msg.textContent = 'No se pudo guardar: ' + error.message; return; }
+  logActividad('ubicacion_obra', `Ubicación ${c.lat}, ${c.lng}`, ubicacionEditando.obra_id, ubicacionEditando.nombre);
+  closeModal('modal-ubicacion');
+  ubicacionEditando = null;
+  await loadConcentrado();
+  if (mapa){ mapa.invalidateSize(); renderMapa(); }
+});
 
 // ---------- RESUMEN EJECUTIVO (tab 1) ----------
 function renderResumenEjecutivo(rows){
@@ -2764,6 +3217,12 @@ document.querySelectorAll('#top-tabs .tab-btn').forEach(btn => {
 
     document.querySelectorAll('#top-tabs .tab-btn').forEach(b => b.classList.toggle('active', b === btn));
     document.querySelectorAll('.toptab-panel').forEach(p => p.classList.toggle('hidden', p.id !== 'toptab-' + tab));
+    if (tab === 'mapa'){
+      iniciarMapa();
+      // Leaflet necesita que el contenedor ya esté visible para medirlo bien; si se dibuja
+      // en el mismo tick en que se le quita "hidden", el mapa sale cortado o en gris.
+      setTimeout(() => { if (mapa){ mapa.invalidateSize(); renderMapa(); } }, 60);
+    }
     if (tab === 'equilibrio') loadGastoConsolidado();
     if (tab === 'supervision') loadSupervisionChecklist();
     if (tab === 'actividad') loadActividad();
