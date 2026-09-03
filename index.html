@@ -745,6 +745,12 @@
   .mapa-pop-acciones button.tenue:hover{color:var(--text); border-color:var(--muted);}
   .mapa-pop-aprox{margin-top:11px; font-size:11.5px; color:var(--warn); background:rgba(245,185,66,.09);
     border:1px solid rgba(245,185,66,.28); border-radius:7px; padding:6px 9px;}
+  .detail-ubicacion{display:flex; align-items:center; gap:11px; flex-wrap:wrap; margin:8px 0 2px; font-size:13px; color:var(--muted);}
+  .detail-ubicacion .sin{color:var(--warn);}
+  .detail-ubicacion em{font-style:normal; opacity:.75;}
+  .detail-ubicacion button{background:transparent; color:var(--accent); border:1px solid var(--border);
+    border-radius:7px; padding:4px 10px; font-size:12.5px; cursor:pointer; font-family:inherit;}
+  .detail-ubicacion button:hover{border-color:var(--accent);}
   .mapa-sin{margin-top:18px; background:var(--panel); border:1px solid var(--border); border-radius:11px; padding:15px 17px;}
   .mapa-sin-titulo{font-size:13px; font-weight:600; margin-bottom:4px;}
   .mapa-sin-desc{font-size:12.5px; color:var(--muted); margin-bottom:12px;}
@@ -1121,6 +1127,7 @@
       </div>
       <h2 id="detail-nombre"></h2>
       <div class="sub" id="detail-sub"></div>
+      <div id="detail-ubicacion" class="detail-ubicacion"></div>
       <div id="detail-estado-badge" class="data-gap-banner hidden" style="background:rgba(96,165,250,.12); border-color:rgba(96,165,250,.4); color:#60a5fa;"></div>
 
       <div id="detail-data-gap" class="data-gap-banner hidden"></div>
@@ -2514,13 +2521,29 @@ document.addEventListener('click', (e) => {
   if (r) openDetail(r);
 });
 
+// La ubicación también se pone desde la obra misma, no solo desde el mapa: es donde
+// cualquiera la busca primero.
+function renderUbicacionDetalle(r){
+  const wrap = document.getElementById('detail-ubicacion');
+  if (!wrap || !r) return;
+  const lugar = Array.from(new Set([r.localidad, r.municipio, r.entidad].filter(Boolean))).join(' · ');
+  const ubicada = tieneUbicacion(r);
+  const texto = ubicada
+    ? `<span>Ubicación: ${esc(lugar || 'capturada')}${r.ubicacion_exacta ? '' : ' <em>— aproximada, cae en el pueblo</em>'}</span>`
+    : '<span class="sin">Esta obra no tiene ubicación capturada.</span>';
+  wrap.innerHTML = texto + (roleAllows('modificar-contrato')
+    ? `<button type="button" class="btn-ubicar" data-obra-id="${esc(String(r.obra_id))}">${ubicada ? 'Editar ubicación' : 'Poner ubicación'}</button>`
+    : '');
+}
+
 // ---------- capturar la coordenada que da Google Maps ----------
 let ubicacionEditando = null;
 
 document.addEventListener('click', (e) => {
   const b = e.target.closest('.btn-ubicar');
   if (!b) return;
-  const r = activeRows.find(x => String(x.obra_id) === b.dataset.obraId);
+  const r = activeRows.find(x => String(x.obra_id) === b.dataset.obraId)
+         || (currentObra && String(currentObra.obra_id) === b.dataset.obraId ? currentObra : null);
   if (!r) return;
   ubicacionEditando = r;
   document.getElementById('ub-obra').value = r.nombre || '';
@@ -2590,9 +2613,17 @@ Lo más común es haber invertido la latitud y la longitud: la latitud va primer
   btn.disabled = false;
   if (error){ msg.className = 'modal-msg err'; msg.textContent = 'No se pudo guardar: ' + error.message; return; }
   logActividad('ubicacion_obra', `Ubicación ${c.lat}, ${c.lng}`, ubicacionEditando.obra_id, ubicacionEditando.nombre);
+  const obraGuardada = ubicacionEditando.obra_id;
   closeModal('modal-ubicacion');
   ubicacionEditando = null;
   await loadConcentrado();
+  // loadConcentrado rearma activeRows: si el detalle de esa obra está abierto, hay que
+  // reapuntarlo a la fila nueva o seguiría enseñando la ubicación vieja
+  const actualizada = activeRows.find(x => x.obra_id === obraGuardada);
+  if (actualizada && !document.getElementById('detail-screen').classList.contains('hidden')){
+    currentObra = actualizada;
+    renderUbicacionDetalle(actualizada);
+  }
   if (mapa){ mapa.invalidateSize(); renderMapa(); }
 });
 
@@ -4743,6 +4774,7 @@ async function openDetail(r){
   document.getElementById('detail-screen').classList.remove('hidden');
   document.getElementById('detail-nombre').textContent = r.nombre;
   document.getElementById('detail-sub').textContent = (r.cliente || '') + (r.contrato ? ' — ' + r.contrato : '');
+  renderUbicacionDetalle(r);
   updateDetailEstadoUI(r);
 
   const gapBanner = document.getElementById('detail-data-gap');
@@ -5094,11 +5126,31 @@ document.getElementById('btn-ef-borrar').addEventListener('click', async () => {
   if (!edicionActual || edicionActual.id === null) return;
   const { tabla, id, cfg } = edicionActual;
   if (!confirm(`Se va a eliminar este renglón de forma permanente.\n\nSi solo quieres que deje de contar sin perder el rastro, cierra esto y ponle "No" en «¿Cuenta en el costo?».\n\n¿Eliminar de todas formas?`)) return;
+  // borrar un concepto deja sueltos los avances que se reportaron contra él: mejor decirlo antes
+  if (tabla === 'presupuesto_ganador' && currentObra){
+    const clave = edicionActual.original && edicionActual.original.clave;
+    if (clave){
+      const { count } = await sb.from('avance_semanal')
+        .select('id', { count:'exact', head:true })
+        .eq('obra_id', currentObra.obra_id).eq('concepto_clave', clave);
+      if (count && !confirm(`Ojo: este concepto tiene ${count} reporte${count === 1 ? '' : 's'} de avance.\n\nAl borrar el concepto esos reportes se quedan sin a qué pertenecer y dejan de contar en el avance físico de la obra.\n\n¿Continuar?`)) return;
+    }
+  }
   const msg = document.getElementById('ef-msg');
   const btn = document.getElementById('btn-ef-borrar');
   btn.disabled = true; msg.className = 'modal-msg'; msg.textContent = 'Eliminando…';
   const claveBorrada = edicionActual.original && edicionActual.original.clave;
-  const { error } = await sb.from(tabla).delete().eq('id', id);
+  // .select() al final para saber CUÁNTAS filas se borraron de verdad. Sin esto, cuando la
+  // política de la base no deja borrar, PostgREST contesta "listo" sin borrar nada: la
+  // ventana se cerraba, quedaba anotado en la bitácora, y la fila seguía ahí. Así estuvo
+  // semanas para Supervisión — Irving borró cinco insumos que nunca se borraron.
+  const { data: borradas, error } = await sb.from(tabla).delete().eq('id', id).select('id');
+  if (!error && (!borradas || !borradas.length)){
+    btn.disabled = false;
+    msg.className = 'modal-msg err';
+    msg.textContent = 'No se eliminó nada: tu usuario no tiene permiso para borrar en esta tabla. Avísale a Saul para que te lo habilite.';
+    return;
+  }
   if (!error && tabla === 'presupuesto_ganador' && claveBorrada && currentObra){
     // el concepto vive en dos tablas: si solo se borra de una, la que queda
     // sigue pesando en el avance físico como un concepto fantasma al 0%
@@ -5148,7 +5200,17 @@ document.getElementById('btn-ef-guardar').addEventListener('click', async () => 
     cambios.obra_id = currentObra ? currentObra.obra_id : null;
     ({ error } = await sb.from(tabla).insert(cambios));
   } else {
-    ({ error } = await sb.from(tabla).update(cambios).eq('id', id));
+    // igual que en la baja: si la política no deja modificar, la respuesta viene sin error
+    // y sin filas. Todas estas tablas dejan LEER a quien deja ESCRIBIR, así que cero filas
+    // aquí siempre significa "no te dejaron", nunca "se guardó pero no lo puedo ver".
+    const res = await sb.from(tabla).update(cambios).eq('id', id).select('id');
+    error = res.error;
+    if (!error && (!res.data || !res.data.length)){
+      btn.disabled = false;
+      msg.className = 'modal-msg err';
+      msg.textContent = 'No se guardó ningún cambio: tu usuario no tiene permiso para modificar en esta tabla. Avísale a Saul para que te lo habilite.';
+      return;
+    }
   }
   let errEspejo = null;
   if (!error && tabla === 'presupuesto_ganador'){
