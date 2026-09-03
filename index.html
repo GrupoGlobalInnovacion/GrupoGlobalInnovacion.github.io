@@ -4478,7 +4478,7 @@ const EDITABLES = {
     titulo: 'Reporte de avance',
     tituloNuevo: 'Reporte de avance',
     borrable: true,
-    desc: 'Corrige la cantidad construida que se reportó. El avance por concepto y el semáforo de la obra se recalculan al guardar.',
+    desc: 'Corrige la cantidad construida que se reportó, o bórralo si se capturó por error: el acumulado del concepto se ajusta solo. Si el reporte quedó en el concepto equivocado, bórralo y captúralo de nuevo en el correcto.',
     // corregir un avance cambia el % construido, que a su vez mueve la utilidad proyectada:
     // hay que releer los conceptos y la obra, no solo la lista de reportes
     recargar: async () => {
@@ -4488,7 +4488,7 @@ const EDITABLES = {
     },
     campos: [
       {col:'fecha_reporte', label:'Fecha del reporte', tipo:'date'},
-      {col:'concepto_clave', label:'Clave del concepto', tipo:'text'},
+      {col:'concepto_clave', label:'Concepto (no se puede cambiar aquí)', tipo:'ro'},
       {col:'cantidad_construida', label:'Cantidad construida', tipo:'number'},
       {col:'nombre_reporta', label:'Quién reportó', tipo:'text'},
       {col:'observaciones', label:'Observaciones', tipo:'text'},
@@ -4583,7 +4583,7 @@ function abrirEditorFila(tabla, fila){
   if (!cfg) return;
   const esNuevo = !fila || fila.id === undefined || fila.id === null;
   fila = fila || {};
-  edicionActual = { tabla, id: esNuevo ? null : fila.id, cfg };
+  edicionActual = { tabla, id: esNuevo ? null : fila.id, cfg, original: fila };
   document.getElementById('ef-titulo').textContent = esNuevo ? (cfg.tituloNuevo || cfg.titulo) : cfg.titulo;
   document.getElementById('ef-desc').textContent = cfg.desc;
   document.getElementById('ef-msg').textContent = '';
@@ -4599,6 +4599,10 @@ function abrirEditorFila(tabla, fila){
       const mostrado = (v === null || v === undefined || v === '') ? '' : (Number(v) * 100);
       return `<div class="field"><label for="ef-${c.col}">${esc(c.label)}</label>
         <input type="number" step="any" min="0" max="100" id="ef-${c.col}" value="${esc(String(mostrado))}" placeholder="Ej. 20"></div>`;
+    }
+    if (c.tipo === 'ro'){
+      return `<div class="field"><label for="ef-${c.col}">${esc(c.label)}</label>
+        <input type="text" id="ef-${c.col}" value="${esc(v === null || v === undefined ? '' : String(v))}" disabled></div>`;
     }
     const tipo = c.tipo === 'number' ? 'number' : (c.tipo === 'date' ? 'date' : 'text');
     const paso = c.tipo === 'number' ? ' step="any"' : '';
@@ -4634,7 +4638,14 @@ document.getElementById('btn-ef-borrar').addEventListener('click', async () => {
   const msg = document.getElementById('ef-msg');
   const btn = document.getElementById('btn-ef-borrar');
   btn.disabled = true; msg.className = 'modal-msg'; msg.textContent = 'Eliminando…';
+  const claveBorrada = edicionActual.original && edicionActual.original.clave;
   const { error } = await sb.from(tabla).delete().eq('id', id);
+  if (!error && tabla === 'presupuesto_ganador' && claveBorrada && currentObra){
+    // el concepto vive en dos tablas: si solo se borra de una, la que queda
+    // sigue pesando en el avance físico como un concepto fantasma al 0%
+    await sb.from('presupuesto_costo_directo').delete()
+      .eq('obra_id', currentObra.obra_id).eq('clave', claveBorrada);
+  }
   btn.disabled = false;
   if (error){ msg.className = 'modal-msg err'; msg.textContent = 'No se pudo eliminar: ' + error.message; return; }
   logActividad('borrar_fila', `${cfg.titulo} — ${tabla} #${id}`, currentObra && currentObra.obra_id, currentObra && currentObra.nombre);
@@ -4650,6 +4661,7 @@ document.getElementById('btn-ef-guardar').addEventListener('click', async () => 
   const btn = document.getElementById('btn-ef-guardar');
   const cambios = {};
   for (const c of cfg.campos){
+    if (c.tipo === 'ro') continue;
     const el = document.getElementById('ef-' + c.col);
     if (!el) continue;
     if (c.tipo === 'bool'){ cambios[c.col] = el.value === 'true'; continue; }
@@ -4679,9 +4691,18 @@ document.getElementById('btn-ef-guardar').addEventListener('click', async () => 
   } else {
     ({ error } = await sb.from(tabla).update(cambios).eq('id', id));
   }
-  if (!error && tabla === 'presupuesto_ganador') await espejarCostoDirecto(cambios);
+  let errEspejo = null;
+  if (!error && tabla === 'presupuesto_ganador'){
+    errEspejo = await espejarCostoDirecto(cambios, edicionActual.original && edicionActual.original.clave);
+  }
   btn.disabled = false;
   if (error){ msg.className = 'modal-msg err'; msg.textContent = 'Error al guardar: ' + error.message; return; }
+  if (errEspejo){
+    msg.className = 'modal-msg err';
+    msg.textContent = 'El concepto se guardó, pero no se pudo dejar listo para reportar avance: ' + errEspejo +
+      ' — avísale a Saul antes de capturar avance en este concepto.';
+    return;
+  }
   logActividad(id === null ? 'agregar_fila' : 'editar_fila',
     `${cfg.titulo} — ${tabla}${id === null ? ' (nuevo)' : ' #' + id}`,
     currentObra && currentObra.obra_id, currentObra && currentObra.nombre);
@@ -4932,8 +4953,8 @@ async function guardarCapturaMasiva(){
 
 // El avance se reporta contra presupuesto_costo_directo, no contra el ganador. Cada concepto
 // del presupuesto tiene que existir en las dos tablas o no aparece en el selector de conceptos.
-async function espejarCostoDirecto(c){
-  if (!currentObra || !c || !c.clave) return;
+async function espejarCostoDirecto(c, claveAnterior){
+  if (!currentObra || !c || !c.clave) return null;
   const obraId = currentObra.obra_id;
   const fila = {
     obra_id: obraId,
@@ -4944,10 +4965,21 @@ async function espejarCostoDirecto(c){
     precio_unitario_costo: Number(c.precio_unitario || 0),
     importe_costo: Number(c.importe || 0),
   };
-  const { data: ya } = await sb.from('presupuesto_costo_directo')
-    .select('id').eq('obra_id', obraId).eq('clave', c.clave).maybeSingle();
-  if (ya) await sb.from('presupuesto_costo_directo').update(fila).eq('id', ya.id);
-  else await sb.from('presupuesto_costo_directo').insert({ ...fila, cantidad_construida_actual: 0 });
+  // Buscar el espejo por la clave que el concepto tenía ANTES de esta edición.
+  // Si se busca solo por la clave nueva, un cambio de clave deja el espejo viejo
+  // huérfano y crea uno nuevo: el concepto termina contado dos veces y el avance
+  // físico de la obra sale a la mitad. Eso fue lo que pasó en Tulum y en Hampolol.
+  const buscarPor = claveAnterior || c.clave;
+  const { data: ya, error: eBuscar } = await sb.from('presupuesto_costo_directo')
+    .select('id').eq('obra_id', obraId).eq('clave', buscarPor).maybeSingle();
+  if (eBuscar) return eBuscar.message;
+  if (ya){
+    const { error } = await sb.from('presupuesto_costo_directo').update(fila).eq('id', ya.id);
+    return error ? error.message : null;
+  }
+  const { error } = await sb.from('presupuesto_costo_directo')
+    .insert({ ...fila, cantidad_construida_actual: 0 });
+  return error ? error.message : null;
 }
 
 async function loadReportesAvance(){
